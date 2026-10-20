@@ -96,8 +96,8 @@ pub fn same_disk(source: &str, dest_dir: &Path) -> Result<bool> {
     #[cfg(unix)]
     {
         // /dev/rdisk4s2 vs a destination mounted from that device.
-        use std::os::unix::fs::MetadataExt;
-        if let (Ok(a), Ok(b)) = (std::fs::metadata(&src), std::fs::metadata(&dest)) {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        if let (Ok(a), Ok(b)) = (std::fs::metadata(source), std::fs::metadata(&dest)) {
             if (a.file_type().is_block_device() || a.file_type().is_char_device())
                 && a.rdev() == b.dev()
             {
@@ -147,7 +147,9 @@ pub fn free_space(dir: &Path) -> Result<u64> {
         if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
             return Err(Error::Io(std::io::Error::last_os_error()));
         }
-        Ok(st.f_bavail as u64 * st.f_frsize as u64)
+        // Field widths differ per platform (u32/u64); widen explicitly.
+        #[allow(clippy::unnecessary_cast)]
+        Ok((st.f_bavail as u128 * st.f_frsize as u128) as u64)
     }
 }
 

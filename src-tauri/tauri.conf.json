@@ -47,7 +47,7 @@
         "languages": ["SimpChinese", "TradChinese", "English", "Japanese"],
         "displayLanguageSelector": true
       },
-      "wix": { "language": ["zh-CN", "en-US"] }
+      "wix": { "language": ["zh-CN", "en-US"], "template": "wix/main.wxs" }
     },
     "macOS": {
       "minimumSystemVersion": "12.0",

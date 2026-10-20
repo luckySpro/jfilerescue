@@ -114,11 +114,12 @@ jobs:
             const dl = name => `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
             const sig = async name => { const a = assets.find(x => x.name === name + '.sig'); if (!a) return null; const r = await fetch(a.browser_download_url, { headers: { authorization: `token ${process.env.GITHUB_TOKEN || ''}` } }); return (await r.text()).trim(); };
             const platforms = {};
+            // tauri-action names macOS updater bundles `<name>_<ver>_<arch>.app.tar.gz` with arch from the target triple (aarch64 / x86_64).
             const map = [
               ['windows-x86_64', a => /x64.*setup\.exe$/i.test(a.name)],
               ['windows-x86_64-msi', a => /x64.*\.msi$/i.test(a.name)],
               ['darwin-aarch64', a => /aarch64\.app\.tar\.gz$/i.test(a.name)],
-              ['darwin-x86_64', a => /x64\.app\.tar\.gz$/i.test(a.name)],
+              ['darwin-x86_64', a => /(x64|x86_64)\.app\.tar\.gz$/i.test(a.name)],
             ];
             for (const [key, pred] of map) {
               const a = assets.find(pred); if (!a) continue;
@@ -138,7 +139,7 @@ jobs:
               core.warning('no updater signatures found; publishing without latest.json');
             }
             // Require every platform installer to be present before publishing.
-            const need = [/x64.*setup\.exe$/i, /aarch64\.dmg$/i, /x64\.dmg$/i];
+            const need = [/x64.*setup\.exe$/i, /aarch64\.dmg$/i, /(x64|x86_64)\.dmg$/i];
             const lack = need.filter(re => !assets.some(a => re.test(a.name)));
             if (lack.length) core.setFailed(`installer missing for ${lack.length} platform(s); draft left unpublished`);
             await github.rest.repos.updateRelease({ owner, repo, release_id: rel.id, tag_name: tag, draft: false });

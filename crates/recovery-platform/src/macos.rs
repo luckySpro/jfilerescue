@@ -50,14 +50,14 @@ fn device_size(f: &std::fs::File) -> Option<(u64, u32)> {
     let mut bs: u32 = 0;
     let mut bc: u64 = 0;
     unsafe {
-        if libc::ioctl(f.as_raw_fd(), DKIOCGETBLOCKSIZE, &mut bs) != 0 {
+        if libc::ioctl(f.as_raw_fd(), DKIOCGETBLOCKSIZE, &mut bs as *mut u32) != 0 {
             return None;
         }
-        if libc::ioctl(f.as_raw_fd(), DKIOCGETBLOCKCOUNT, &mut bc) != 0 {
+        if libc::ioctl(f.as_raw_fd(), DKIOCGETBLOCKCOUNT, &mut bc as *mut u64) != 0 {
             return None;
         }
     }
-    Some((bs as u64 * bc, bs))
+    Some((u64::from(bs) * bc, bs))
 }
 
 pub fn open_raw(path: &str) -> Result<std::fs::File> {
@@ -139,12 +139,10 @@ impl Platform for MacPlatform {
             .unwrap_or_default();
         // FDA probe: reading a TCC-protected path succeeds only with Full Disk Access.
         let home = std::env::var("HOME").unwrap_or_default();
-        let fda = std::fs::read_dir(format!("{}/Library/Mail", home))
-            .map(|_| true)
-            .or_else(|_| {
-                std::fs::metadata(format!("{}/Library/Safari/Bookmarks.plist", home)).map(|_| true)
-            })
-            .ok();
+        let fda = Some(
+            std::fs::read_dir(format!("{}/Library/Mail", home)).is_ok()
+                || std::fs::metadata(format!("{}/Library/Safari/Bookmarks.plist", home)).is_ok(),
+        );
         let helper_version = std::fs::read_to_string(
             "/Library/PrivilegedHelperTools/com.mjgroup.jfilerescue.helper.version",
         )
@@ -189,7 +187,7 @@ impl Platform for MacPlatform {
             let ssd = dict_bool(&info, "SolidState");
             let model = dict_str(&info, "MediaName");
             let removable = dict_bool(&info, "RemovableMedia")
-                .or(dict_bool(&info, "Removable"))
+                .or_else(|| dict_bool(&info, "Removable"))
                 .unwrap_or(false);
             let internal = dict_bool(&info, "Internal").unwrap_or(false);
             let bs = dict_u64(&info, "DeviceBlockSize").max(512) as u32;
@@ -274,17 +272,17 @@ impl Platform for MacPlatform {
                     "msdos" => FsKind::Fat32,
                     _ => FsKind::Unknown,
                 };
-                if fs == FsKind::Unknown && dict_str(&vi, "Content") != "Microsoft Basic Data" {
-                    if !fs_pers.is_empty() {
-                        // hfs etc. — listed but unsupported
-                    } else {
-                        continue;
-                    }
+                // Unknown FS with no persona at all (e.g. free space / EFI): skip. Known-but-unsupported (hfs…) stays listed.
+                if fs == FsKind::Unknown
+                    && dict_str(&vi, "Content") != "Microsoft Basic Data"
+                    && fs_pers.is_empty()
+                {
+                    continue;
                 }
                 let vsize = dict_u64(&vi, "TotalSize").max(dict_u64(&vi, "Size"));
                 let free = dict_u64(&vi, "APFSContainerFree").max(dict_u64(&vi, "FreeSpace"));
                 let encrypted = dict_bool(&vi, "Encrypted")
-                    .or(dict_bool(&vi, "FileVault"))
+                    .or_else(|| dict_bool(&vi, "FileVault"))
                     .unwrap_or(false);
                 let locked = dict_bool(&vi, "Locked").unwrap_or(false);
                 let mount = dict_str(&vi, "MountPoint");
@@ -333,7 +331,7 @@ impl Platform for MacPlatform {
                     encryption_unlocked: !locked,
                     is_system: mount == "/"
                         || role.contains("System")
-                        || role.contains("Data") && internal,
+                        || (role.contains("Data") && internal),
                     notes,
                 });
             }
