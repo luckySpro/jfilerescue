@@ -616,16 +616,14 @@ fn ctrlc_handler<F: Fn() + Send + Sync + 'static>(f: F) -> std::io::Result<()> {
     }
     #[cfg(unix)]
     {
-        extern "C" {
-            fn signal(sig: i32, h: usize) -> usize;
-        }
-        extern "C" fn handler(_: i32) {
+        extern "C" fn handler(_: libc::c_int) {
             if let Some(h) = HANDLER.get() {
                 h();
             }
         }
+        let h: extern "C" fn(libc::c_int) = handler;
         unsafe {
-            signal(2, handler as usize);
+            libc::signal(libc::SIGINT, h as libc::sighandler_t);
         }
     }
     Ok(())
