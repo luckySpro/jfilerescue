@@ -75,17 +75,32 @@ jobs:
         run: |
           echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set — building without updater signatures (no latest.json)"
           node -e "const f='src-tauri/tauri.conf.json';const j=require('./'+f);j.bundle.createUpdaterArtifacts=false;delete j.plugins.updater.pubkey;require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
-      - uses: tauri-apps/tauri-action@v0
+      # Apple signing is optional: an empty APPLE_CERTIFICATE makes the bundler try to import
+      # nothing and fail, so only export the Apple variables when the secret is actually set.
+      - name: Export Apple signing environment (only when configured)
+        if: runner.os == 'macOS'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              echo "::add-mask::${!v}"; echo "$v=${!v}" >> "$GITHUB_ENV"
+            done
+            echo "Apple signing: enabled"
+          else
+            echo "::warning::APPLE_CERTIFICATE not set — macOS bundle will be unsigned; users must right-click → Open (or run xattr -dr com.apple.quarantine) on first launch"
+          fi
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
           releaseName: "JFileRescue ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"

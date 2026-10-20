@@ -16,6 +16,7 @@
 | **CLI 端到端**（生成的 FAT32 镜像）：`scan --mode directory` → 3 个文件含正确路径 → `show` → `recover --all` 到临时目录 → JPEG 头尾 `FF D8 … FF D9`、长度 200026 与原始一致；docx/xlsx 测试占位内容被校验正确标记"文件头不是 ZIP"（带警告）→ `scan --mode full --depth deep --ext jpg` 雕刻命中同一 JPEG（195.3 KB，High）→ CSV 导出 | 真实二进制 + 真实文件系统镜像 | ✅ 通过 |
 | 同盘拒绝 | 契约 | ✅ 对真实卷/物理盘生效（Windows 卷句柄字母、平台层卷→磁盘映射）；镜像文件不视为同盘（已修正，原先误拒） |
 | Windows 生产安装包 `pnpm tauri build --bundles nsis` | 最终包 | ✅ `target/release/bundle/nsis/JFileRescue_0.1.0_x64-setup.exe`（211 MB，内置 WebView2 离线安装器）+ `.sig` updater 签名 |
+| Windows MSI `pnpm tauri build --bundles msi` | 最终包 | ✅ `JFileRescue_0.1.0_x64_{en-US,zh-CN}.msi` + `.sig`。首次构建因 `M&J Group` 中的 `&` 导致 candle CNDL0104 失败；改用 `src-tauri/wix/main.wxs` 自定义模板（厂商名预转义为 `M&amp;J Group`，注册表路径单反斜杠）后通过，渲染后的 wxs 已核对 |
 | 生产二进制启动冒烟 `target/release/jfilerescue.exe` | 真实 WebView2 | ✅ 窗口标题 `JFileRescue`，WebView2 进程启动，8 s 后仍存活，正常结束 |
 | updater 签名 | 最终包 | ✅ 密钥对在 `~/.tauri/jfilerescue.key`（仓库外，**请备份**），公钥已写入 `tauri.conf.json`，`.sig` 已生成 |
 | 真实安装 / 真实磁盘业务验收 | 安装冒烟 / 真实业务 | ⏳ **未执行**（需管理员权限与真实删除场景；见待办） |
