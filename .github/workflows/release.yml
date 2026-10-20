@@ -69,6 +69,14 @@ jobs:
           v="${{ github.event.inputs.version }}"
           node -e "const f='src-tauri/tauri.conf.json';const j=require('./'+f);j.version='$v';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
           sed -i.bak -E "s/^version = \"[0-9.]+\"/version = \"$v\"/" Cargo.toml && rm -f Cargo.toml.bak
+      - name: Disable updater artifacts when no signing key is configured
+        if: env.HAS_KEY == ''
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set — building without updater signatures (no latest.json)"
+          node -e "const f='src-tauri/tauri.conf.json';const j=require('./'+f);j.bundle.createUpdaterArtifacts=false;delete j.plugins.updater.pubkey;require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,10 +128,20 @@ jobs:
               platforms[key] = { url: dl(a.name), signature: s };
             }
             const required = ['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64'];
-            for (const r of required) if (!platforms[r]) core.setFailed(`required platform missing: ${r}`);
-            const latest = { version: tag.replace(/^v/, ''), notes: rel.body || '', pub_date: new Date().toISOString(), platforms };
-            const existing = assets.find(a => a.name === 'latest.json');
-            if (existing) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
-            await github.rest.repos.uploadReleaseAsset({ owner, repo, release_id: rel.id, name: 'latest.json', data: JSON.stringify(latest, null, 2), headers: { 'content-type': 'application/json' } });
+            const missing = required.filter(r => !platforms[r]);
+            const haveSigs = assets.some(a => a.name.endsWith('.sig'));
+            if (haveSigs && missing.length) core.setFailed(`required platform missing: ${missing.join(', ')}`);
+            if (haveSigs) {
+              const latest = { version: tag.replace(/^v/, ''), notes: rel.body || '', pub_date: new Date().toISOString(), platforms };
+              const existing = assets.find(a => a.name === 'latest.json');
+              if (existing) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+              await github.rest.repos.uploadReleaseAsset({ owner, repo, release_id: rel.id, name: 'latest.json', data: JSON.stringify(latest, null, 2), headers: { 'content-type': 'application/json' } });
+            } else {
+              core.warning('no updater signatures found; publishing without latest.json');
+            }
+            // Require every platform installer to be present before publishing.
+            const need = [/x64.*setup\.exe$/i, /aarch64\.dmg$/i, /x64\.dmg$/i];
+            const lack = need.filter(re => !assets.some(a => re.test(a.name)));
+            if (lack.length) core.setFailed(`installer missing for ${lack.length} platform(s); draft left unpublished`);
             await github.rest.repos.updateRelease({ owner, repo, release_id: rel.id, tag_name: tag, draft: false });
-            core.info(`published ${tag} with ${assets.length + 1} assets`);
+            core.info(`published ${tag} with ${assets.length} assets`);

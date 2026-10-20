@@ -79,7 +79,7 @@ jfr sigs list | enable | disable | export | import | restore-defaults
 
 ## 发布
 
-`.github/workflows/release.yml`：按 tag 构建 Windows x64（NSIS + MSI，内置 WebView2 离线安装器）与 macOS（arm64 / x64 DMG），生成 updater 签名与 `latest.json`。需要 secrets：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`；Apple / Windows 代码签名证书按需配置。`tauri.conf.json` 中 `plugins.updater.pubkey` 需替换为配套公钥。
+`.github/workflows/release.yml`：按 tag 构建 Windows x64（NSIS + MSI，内置 WebView2 离线安装器）与 macOS（arm64 / x64 DMG），生成 updater 签名与 `latest.json`。需要 secrets：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（未配置时仍会构建并发布，但不生成更新签名/`latest.json`）；Apple / Windows 代码签名证书按需配置。
 
 更新通道含 GH-Proxy 镜像回退，签名校验不受影响。
 

@@ -11,8 +11,8 @@ await new Promise((r) => setTimeout(r, 2500));
 const browser = await chromium.launch();
 const nav = (p, s) => p.click(`button.nav[data-s="${s}"]`);
 const shots = [
-  ["home", async (p) => { await p.click("tbody tr >> nth=1"); await p.waitForTimeout(300); }],
-  ["scan", async (p) => { await p.click("tbody tr >> nth=3"); await p.fill("input[type=text] >> nth=0", "D:\\项目\\2025-合同"); await p.click("text=开始扫描"); await p.waitForTimeout(9000); }],
+  ["home", async (p) => { await p.fill("input[type=text] >> nth=0", "D:\\项目\\2025-合同"); await p.waitForTimeout(300); }],
+  ["scan", async (p) => { await p.fill("input[type=text] >> nth=0", "D:\\项目\\2025-合同"); await p.waitForTimeout(300); await p.click("text=开始扫描"); await p.waitForTimeout(9000); }],
   ["results", async (p) => { await nav(p, "sessions"); await p.click("table >> text=打开"); await p.waitForTimeout(800); await p.click("tbody tr >> nth=0"); await p.waitForTimeout(500); }],
   ["recover", async (p) => { await nav(p, "sessions"); await p.click("table >> text=打开"); await p.waitForTimeout(800); await p.click("text=恢复所选文件"); await p.fill("input[type=text]", "E:\\恢复"); await p.waitForTimeout(600); await p.click("text=开始恢复"); await p.waitForTimeout(4000); }],
   ["sessions", async (p) => { await nav(p, "sessions"); await p.waitForTimeout(400); }],

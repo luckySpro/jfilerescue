@@ -59,8 +59,8 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4RUYxNEM0QjgyMDEwRjgKUldUNEVDQzR4QlR2bUNFNlY2eG9CQ0FGL25SVVBnMjJPVmd1SWxpZDJDZ1ppMVZWQnJqK05RWUQK",
       "endpoints": [
-        "https://github.com/mjgroup/jfilerescue/releases/latest/download/latest.json",
-        "https://gh-proxy.com/https://github.com/mjgroup/jfilerescue/releases/latest/download/latest.json"
+        "https://github.com/luckySpro/jfilerescue/releases/latest/download/latest.json",
+        "https://gh-proxy.com/https://github.com/luckySpro/jfilerescue/releases/latest/download/latest.json"
       ]
     }
   }

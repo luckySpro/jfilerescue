@@ -43,7 +43,7 @@ const oss = [
         <p class="small muted">{{ t.about.platforms }}</p>
         <h2 class="mt">{{ t.about.oss }}</h2>
         <table><tbody><tr v-for="[n, l] in oss" :key="n"><td>{{ n }}</td><td class="small muted">{{ l }}</td></tr></tbody></table>
-        <div class="row mt"><a class="btn" href="https://github.com/mjgroup/jfilerescue" target="_blank" rel="noopener">{{ t.about.source }}</a></div>
+        <div class="row mt"><a class="btn" href="https://github.com/luckySpro/jfilerescue" target="_blank" rel="noopener">{{ t.about.source }}</a></div>
       </div>
     </div>
   </section>

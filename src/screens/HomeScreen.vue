@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { api, pickDirectory, pickFile, pickSavePath, type DiskEntry, type VolumeEntry } from "../api";
 import { dict } from "../i18n";
 import { disks, disksLoading, go, humanBytes, notify, privilege, setup } from "../store";
@@ -35,6 +35,35 @@ async function browseDir() {
   if (p) setup.directory = p;
 }
 
+/** Infer the source volume from the directory path: drive letter on Windows,
+ *  mount point prefix on macOS (`/Volumes/Name/...` or `/` for the system volume). */
+function volumeForPath(path: string): { d: DiskEntry; v: VolumeEntry } | null {
+  const p = path.trim();
+  if (!p) return null;
+  let best: { d: DiskEntry; v: VolumeEntry; len: number } | null = null;
+  for (const d of disks.value) {
+    for (const v of d.volumes) {
+      if (!v.mount) continue;
+      const m = v.mount.replace(/[\\/]+$/, "");
+      const norm = (s: string) => s.replace(/\\/g, "/").toLowerCase();
+      const pn = norm(p), mn = norm(m);
+      const hit = mn === "" ? pn.startsWith("/") : pn === mn || pn.startsWith(mn + "/");
+      if (hit && (!best || m.length > best.len)) best = { d, v, len: m.length };
+    }
+  }
+  return best ? { d: best.d, v: best.v } : null;
+}
+/** True when the directory path is on a volume we can see (so manual source pick is unnecessary). */
+const inferred = computed(() => (setup.mode === "directory" ? volumeForPath(setup.directory) : null));
+// Keep setup.source in sync with the typed directory; a manually chosen image stays.
+watch(inferred, (hit) => {
+  if (hit && !setup.source?.disk.path.match(/\.(img|dd|raw|bin|iso|dmg)$/i)) selectVolume(hit.d, hit.v);
+});
+const needManualSource = computed(() => setup.mode === "full" || (!inferred.value && !setup.source));
+const showList = ref(false);
+// Changing mode resets the manual-list toggle.
+watch(() => setup.mode, () => (showList.value = false));
+
 function addExt() {
   for (const e of extInput.value.split(/[,\s/]+/)) {
     const x = e.trim().replace(/^\./, "").toLowerCase();
@@ -60,8 +89,9 @@ function capText(d: DiskEntry, v: VolumeEntry | null) {
 }
 
 async function start() {
-  if (!setup.source) return notify(t.value.settings.needSource, "error");
   if (setup.mode === "directory" && !setup.directory.trim()) return notify(t.value.settings.needDir, "error");
+  if (setup.mode === "directory" && inferred.value && !setup.source) selectVolume(inferred.value.d, inferred.value.v);
+  if (!setup.source) return notify(setup.mode === "directory" ? t.value.source.notInferred : t.value.settings.needSource, "error");
   starting.value = true;
   try {
     let source = setup.source.path;
@@ -112,7 +142,18 @@ async function start() {
     </div>
 
     <div class="grid-main-side mt">
-      <div class="card">
+      <div>
+        <!-- Directory mode: the path decides the source; show it first. -->
+        <div v-if="setup.mode === 'directory'" class="card" style="margin-bottom: 16px">
+          <h2>{{ t.settings.dirLabel }}</h2>
+          <div class="row"><input type="text" v-model="setup.directory" :placeholder="isMac ? '/Volumes/LaCie/Photos/2025' : 'D:\\项目\\2025-合同'" style="flex: 1" /><button class="btn" @click="browseDir">{{ t.settings.browse }}</button></div>
+          <span class="small muted">{{ t.settings.dirHint }}</span>
+          <div v-if="inferred" class="notice ok mt-s"><span>✓</span><span>{{ t.source.inferred }}：<b>{{ inferred.v.display_name }} · {{ inferred.v.fs_label }}</b> <span class="muted small">({{ inferred.d.display_name }})</span> <a href="#" class="small" @click.prevent="showList = !showList">{{ showList ? t.source.hideList : t.source.changeSource }}</a></span></div>
+          <div v-else-if="setup.directory.trim() && disks.length" class="notice warn mt-s"><span>⚠</span><span>{{ t.source.notInferred }}</span></div>
+          <div v-else-if="setup.source" class="notice info mt-s"><span>▣</span><span class="ellipsis">{{ setup.source.displayName }} <a href="#" class="small" @click.prevent="showList = !showList">{{ showList ? t.source.hideList : t.source.changeSource }}</a></span></div>
+        </div>
+
+        <div class="card" v-show="needManualSource || showList">
         <h2>{{ t.source.title }} <span class="small muted" style="font-weight: 400">{{ t.source.ro }}</span></h2>
         <div v-if="disksLoading" class="empty"><span class="spin"></span> {{ t.source.loading }}</div>
         <div v-else-if="disks.length === 0" class="empty">{{ t.source.empty }}</div>
@@ -144,17 +185,13 @@ async function start() {
           <button class="btn" @click="openImage">{{ t.source.image }}</button>
           <span class="small muted">{{ t.source.noDisk }} <a href="#" @click.prevent="go('perm')">{{ t.source.wizard }}</a></span>
         </div>
+        </div>
         <div v-if="warning" class="notice warn mt"><span>⚠</span><span><span class="b">{{ warning.b }}</span> {{ warning.text }}</span></div>
       </div>
 
       <div class="card">
         <h2>{{ t.settings.title }}</h2>
         <div v-if="setup.source" class="notice info" style="margin-bottom: 12px"><span>▣</span><span class="ellipsis">{{ setup.source.displayName }}</span></div>
-        <div class="field" v-if="setup.mode === 'directory'">
-          <label>{{ t.settings.dirLabel }}</label>
-          <div class="row"><input type="text" v-model="setup.directory" :placeholder="isMac ? '/Volumes/LaCie/Photos/2025' : 'D:\\项目\\2025-合同'" style="flex: 1" /><button class="btn" @click="browseDir">{{ t.settings.browse }}</button></div>
-          <span class="small muted">{{ t.settings.dirHint }}</span>
-        </div>
         <div class="field">
           <label>{{ t.settings.depth }}</label>
           <label class="radio" :class="{ on: setup.depth === 'quick' }"><input type="radio" name="depth" value="quick" v-model="setup.depth" /><div><b>{{ t.settings.quick }}</b><span>{{ t.settings.quickDesc }}</span></div></label>
@@ -174,7 +211,7 @@ async function start() {
           <div class="row" style="justify-content: space-between"><span class="small">{{ t.settings.imageOpt }}</span><button class="switch" :class="{ on: setup.makeImage }" @click="setup.makeImage = !setup.makeImage" role="switch" :aria-checked="setup.makeImage"></button></div>
           <div class="row" style="justify-content: space-between"><span class="small">{{ t.settings.damaged }}</span><button class="switch" :class="{ on: setup.includeDamaged }" @click="setup.includeDamaged = !setup.includeDamaged" role="switch" :aria-checked="setup.includeDamaged"></button></div>
         </div>
-        <button class="btn primary lg" style="width: 100%; justify-content: center" :disabled="starting || !setup.source" @click="start"><span v-if="starting" class="spin"></span>▶ {{ t.settings.start }}</button>
+        <button class="btn primary lg" style="width: 100%; justify-content: center" :disabled="starting || (setup.mode === 'directory' ? !setup.directory.trim() || (!inferred && !setup.source) : !setup.source)" @click="start"><span v-if="starting" class="spin"></span>▶ {{ t.settings.start }}</button>
         <p class="small muted mt-s">{{ t.settings.estimate }}</p>
       </div>
     </div>
