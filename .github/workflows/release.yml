@@ -1,0 +1,129 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.1.1). A tag v<version> is created by the workflow."
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm build
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: "--bundles nsis,msi"
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            args: "--bundles app,dmg --target aarch64-apple-darwin"
+            target: aarch64-apple-darwin
+          - os: macos-13
+            args: "--bundles app,dmg --target x86_64-apple-darwin"
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "${{ matrix.target }}" }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Set version (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          v="${{ github.event.inputs.version }}"
+          node -e "const f='src-tauri/tauri.conf.json';const j=require('./'+f);j.version='$v';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+          sed -i.bak -E "s/^version = \"[0-9.]+\"/version = \"$v\"/" Cargo.toml && rm -f Cargo.toml.bak
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          releaseName: "JFileRescue ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          includeUpdaterJson: false   # a single job assembles latest.json after all platforms finish
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble latest.json from all platform assets and publish the draft
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const { owner, repo } = context.repo;
+            const rels = await github.paginate(github.rest.repos.listReleases, { owner, repo });
+            const rel = rels.find(r => r.draft && (r.tag_name === tag || r.name?.endsWith(tag.replace(/^v/, ''))));
+            if (!rel) core.setFailed(`draft release for ${tag} not found`);
+            const assets = rel.assets;
+            const dl = name => `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
+            const sig = async name => { const a = assets.find(x => x.name === name + '.sig'); if (!a) return null; const r = await fetch(a.browser_download_url, { headers: { authorization: `token ${process.env.GITHUB_TOKEN || ''}` } }); return (await r.text()).trim(); };
+            const platforms = {};
+            const map = [
+              ['windows-x86_64', a => /x64.*setup\.exe$/i.test(a.name)],
+              ['windows-x86_64-msi', a => /x64.*\.msi$/i.test(a.name)],
+              ['darwin-aarch64', a => /aarch64\.app\.tar\.gz$/i.test(a.name)],
+              ['darwin-x86_64', a => /x64\.app\.tar\.gz$/i.test(a.name)],
+            ];
+            for (const [key, pred] of map) {
+              const a = assets.find(pred); if (!a) continue;
+              const s = await sig(a.name); if (!s) { core.warning(`missing signature for ${a.name}`); continue; }
+              platforms[key] = { url: dl(a.name), signature: s };
+            }
+            const required = ['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64'];
+            for (const r of required) if (!platforms[r]) core.setFailed(`required platform missing: ${r}`);
+            const latest = { version: tag.replace(/^v/, ''), notes: rel.body || '', pub_date: new Date().toISOString(), platforms };
+            const existing = assets.find(a => a.name === 'latest.json');
+            if (existing) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+            await github.rest.repos.uploadReleaseAsset({ owner, repo, release_id: rel.id, name: 'latest.json', data: JSON.stringify(latest, null, 2), headers: { 'content-type': 'application/json' } });
+            await github.rest.repos.updateRelease({ owner, repo, release_id: rel.id, tag_name: tag, draft: false });
+            core.info(`published ${tag} with ${assets.length + 1} assets`);

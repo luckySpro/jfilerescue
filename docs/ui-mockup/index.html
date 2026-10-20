@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FileRescue 文件找回 — 界面原型 v0.1</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f0f2f5; --border: #e2e5ea;
+    --text: #1d2129; --text-2: #5c6470; --text-3: #8a919c;
+    --primary: #2563eb; --primary-weak: #e8efff; --primary-text: #fff;
+    --ok: #16a34a; --ok-weak: #e6f7ec; --warn: #d97706; --warn-weak: #fff4e0;
+    --bad: #dc2626; --bad-weak: #fdecec; --info-weak: #eef2ff;
+    --radius: 10px; --radius-s: 6px; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  [data-theme="dark"] {
+    --bg: #15171b; --panel: #1e2126; --panel-2: #262a31; --border: #343842;
+    --text: #e6e8eb; --text-2: #aab0b8; --text-3: #7a818c;
+    --primary: #4f8cff; --primary-weak: #1f2d4a; --primary-text: #fff;
+    --ok: #34c468; --ok-weak: #163522; --warn: #f0a63c; --warn-weak: #3b2d13;
+    --bad: #ef5a5a; --bad-weak: #3d1c1c; --info-weak: #22283a;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+  * { box-sizing: border-box; min-width: 0; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Hiragino Sans", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  .app { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 48px 1fr; height: 100vh; }
+  /* 顶栏 */
+  .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .topbar .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .topbar .brand .logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--primary), #7c3aed); }
+  .topbar .spacer { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text-2); white-space: nowrap; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+  .chip.ok { background: var(--ok-weak); color: var(--ok); border-color: transparent; } .chip.ok .dot { background: var(--ok); }
+  .chip.warn { background: var(--warn-weak); color: var(--warn); border-color: transparent; } .chip.warn .dot { background: var(--warn); }
+  .chip.bad { background: var(--bad-weak); color: var(--bad); border-color: transparent; } .chip.bad .dot { background: var(--bad); }
+  .chip.info { background: var(--info-weak); color: var(--primary); border-color: transparent; }
+  select, input[type=text], input[type=search] { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 6px 10px; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  /* 侧栏 */
+  .sidebar { background: var(--panel); border-right: 1px solid var(--border); padding: 12px 10px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+  .sidebar .group { font-size: 11px; color: var(--text-3); padding: 12px 10px 4px; letter-spacing: .5px; }
+  .nav { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-s); cursor: pointer; color: var(--text-2); border: none; background: none; font: inherit; width: 100%; text-align: left; }
+  .nav:hover { background: var(--panel-2); color: var(--text); }
+  .nav.active { background: var(--primary-weak); color: var(--primary); font-weight: 600; }
+  .nav .step { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .nav.done .step { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .nav .ico { width: 18px; text-align: center; flex-shrink: 0; }
+  .sidebar .bottom { margin-top: auto; }
+  /* 主区 */
+  .main { overflow: auto; padding: 20px 24px; }
+  .screen { display: none; } .screen.active { display: block; }
+  h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 0 0 10px; } .sub { color: var(--text-2); margin: 0 0 18px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-main-side { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 16px; }
+  .btn { font: inherit; padding: 7px 14px; border-radius: var(--radius-s); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { background: var(--panel-2); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); } .btn.primary:hover { filter: brightness(1.08); }
+  .btn.danger { color: var(--bad); border-color: var(--bad); } .btn.danger:hover { background: var(--bad-weak); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.lg { padding: 10px 20px; font-size: 15px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mt { margin-top: 16px; } .mt-s { margin-top: 8px; } .muted { color: var(--text-2); } .small { font-size: 12px; } .mono { font-family: var(--mono); font-size: 12px; }
+  /* 模式卡片 */
+  .mode { border: 2px solid var(--border); border-radius: var(--radius); padding: 18px; cursor: pointer; background: var(--panel); transition: .15s; position: relative; }
+  .mode:hover { border-color: var(--primary); }
+  .mode.selected { border-color: var(--primary); background: var(--primary-weak); }
+  .mode .t { font-weight: 600; font-size: 16px; display: flex; gap: 8px; align-items: center; }
+  .mode .t .ico { font-size: 22px; }
+  .mode p { margin: 8px 0 0; color: var(--text-2); font-size: 13px; }
+  .mode .tag { position: absolute; top: 12px; right: 12px; }
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-3); font-weight: 500; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow-wrap: anywhere; }
+  tr.sel td { background: var(--primary-weak); }
+  tr.clickable { cursor: pointer; } tr.clickable:hover td { background: var(--panel-2); }
+  .cap { display: flex; flex-direction: column; gap: 3px; min-width: 120px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; } .bar > i { display: block; height: 100%; background: var(--primary); }
+  .bar.ok > i { background: var(--ok); } .bar.warn > i { background: var(--warn); }
+  /* 表单 */
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; } .field label { font-size: 12px; color: var(--text-2); }
+  .radio { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-s); cursor: pointer; }
+  .radio.on { border-color: var(--primary); background: var(--primary-weak); }
+  .radio b { display: block; font-size: 13px; } .radio span { font-size: 12px; color: var(--text-2); }
+  .switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border); position: relative; cursor: pointer; flex-shrink: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .15s; }
+  .switch.on { background: var(--primary); } .switch.on::after { left: 18px; }
+  .notice { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius-s); font-size: 13px; align-items: flex-start; }
+  .notice.warn { background: var(--warn-weak); color: var(--warn); } .notice.info { background: var(--info-weak); color: var(--primary); } .notice.bad { background: var(--bad-weak); color: var(--bad); }
+  .notice .b { color: var(--text); }
+  /* 扫描 */
+  .phases { display: flex; gap: 8px; margin: 12px 0; }
+  .phase { flex: 1; padding: 10px 12px; border-radius: var(--radius-s); background: var(--panel-2); font-size: 12px; color: var(--text-3); border-left: 3px solid var(--border); }
+  .phase.done { border-color: var(--ok); color: var(--text-2); } .phase.run { border-color: var(--primary); color: var(--text); background: var(--primary-weak); } .phase b { display: block; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .stat { padding: 10px 12px; background: var(--panel-2); border-radius: var(--radius-s); } .stat .v { font-size: 20px; font-weight: 600; } .stat .k { font-size: 12px; color: var(--text-3); }
+  .bigbar { height: 12px; border-radius: 6px; background: var(--panel-2); overflow: hidden; margin: 8px 0; } .bigbar > i { display: block; height: 100%; width: 43%; background: linear-gradient(90deg, var(--primary), #7c3aed); }
+  .log { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border-radius: var(--radius-s); padding: 10px; max-height: 180px; overflow: auto; color: var(--text-2); }
+  /* 结果 */
+  .results { display: grid; grid-template-columns: 220px minmax(0,1fr) 300px; gap: 12px; height: calc(100vh - 48px - 40px - 120px); min-height: 420px; }
+  .results .card { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  .card .hd { padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .card .bd { flex: 1; overflow: auto; padding: 8px; }
+  .tree div { padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tree div:hover { background: var(--panel-2); } .tree div.on { background: var(--primary-weak); color: var(--primary); }
+  .tree .l1 { padding-left: 20px; } .tree .l2 { padding-left: 36px; }
+  .tree .cnt { float: right; color: var(--text-3); font-size: 11px; }
+  .filters { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
+  .filters input[type=search] { flex: 1; min-width: 160px; }
+  .q { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .q.h { background: var(--ok); } .q.m { background: var(--warn); } .q.l { background: var(--bad); }
+  .preview { background: var(--panel-2); border-radius: var(--radius-s); height: 160px; display: flex; align-items: center; justify-content: center; color: var(--text-3); margin-bottom: 12px; }
+  .kv { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; font-size: 12px; } .kv b { color: var(--text-3); font-weight: 500; }
+  .hex { font-family: var(--mono); font-size: 11px; color: var(--text-2); background: var(--panel-2); padding: 8px; border-radius: 4px; margin-top: 10px; overflow: auto; white-space: pre; }
+  .footbar { display: flex; align-items: center; gap: 12px; padding: 12px 0 0; }
+  /* 设置 */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab { padding: 8px 14px; cursor: pointer; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; font: inherit; }
+  .tab.on { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  .tabpane { display: none; } .tabpane.on { display: block; }
+  .setrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .setrow .d { font-size: 12px; color: var(--text-2); }
+  /* 向导 */
+  .steps { display: flex; flex-direction: column; gap: 12px; }
+  .wstep { display: flex; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .wstep .n { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-weak); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+  .wstep.done .n { background: var(--ok); color: #fff; }
+  /* 模态 */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-bg.on { display: flex; }
+  .modal { background: var(--panel); border-radius: 12px; width: 560px; max-width: 94vw; max-height: 90vh; overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .modal .hd { padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 15px; }
+  .modal .bd { padding: 20px; } .modal .ft { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+  /* 窄屏 */
+  @media (max-width: 960px) {
+    .app { grid-template-columns: 64px 1fr; }
+    .sidebar .nav span.lbl, .sidebar .group { display: none; }
+    .grid-2, .grid-main-side { grid-template-columns: 1fr; }
+    .results { grid-template-columns: 1fr; height: auto; } .results .card { max-height: 360px; }
+    .topbar .brand .name { display: none; }
+  }
+  .note-banner { background: var(--warn-weak); color: var(--warn); font-size: 12px; text-align: center; padding: 4px; }
+</style>
+</head>
+<body>
+<div class="note-banner">界面原型（静态演示数据）— 点击左侧导航与按钮可切换各页面；右上角可切换主题。确认后再进入开发。</div>
+<div class="app">
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand"><span class="logo"></span><span class="name">FileRescue 文件找回</span></div>
+    <span class="chip info" id="chipMode">模式：未选择</span>
+    <div class="spacer"></div>
+    <span class="chip ok" id="chipPriv"><span class="dot"></span><span id="chipPrivText">管理员权限 ✓</span></span>
+    <span class="chip" id="chipOS">Windows 11 · x64</span>
+    <select id="osSel" title="模拟平台" onchange="setOS(this.value)"><option value="win">模拟：Windows</option><option value="mac">模拟：macOS</option></select>
+    <select title="语言"><option>简体中文</option><option>繁體中文</option><option>English</option><option>日本語</option><option>跟随系统</option></select>
+    <button class="btn" onclick="toggleTheme()" title="切换主题">◐</button>
+  </header>
+
+  <!-- 侧栏 -->
+  <nav class="sidebar">
+    <div class="group">找回流程</div>
+    <button class="nav active" data-s="home" onclick="go('home')"><span class="step">1</span><span class="lbl">选择模式与来源</span></button>
+    <button class="nav" data-s="scan" onclick="go('scan')"><span class="step">2</span><span class="lbl">扫描</span></button>
+    <button class="nav" data-s="results" onclick="go('results')"><span class="step">3</span><span class="lbl">结果与预览</span></button>
+    <button class="nav" data-s="recover" onclick="go('recover')"><span class="step">4</span><span class="lbl">恢复</span></button>
+    <div class="group">其他</div>
+    <button class="nav" data-s="sessions" onclick="go('sessions')"><span class="ico">🕘</span><span class="lbl">扫描记录</span></button>
+    <button class="nav" data-s="settings" onclick="go('settings')"><span class="ico">⚙</span><span class="lbl">设置与签名库</span></button>
+    <button class="nav" data-s="perm" onclick="go('perm')"><span class="ico">🔐</span><span class="lbl">权限向导</span></button>
+    <div class="bottom">
+      <button class="nav" data-s="about" onclick="go('about')"><span class="ico">ⓘ</span><span class="lbl">诊断与关于</span></button>
+      <div class="small muted" style="padding:8px 10px">v0.1.0 · M&amp;J Group</div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <!-- ========== 1 选择模式与来源 ========== -->
+    <section class="screen active" id="s-home">
+      <h1>选择找回模式</h1>
+      <p class="sub">两种模式都只读取源磁盘，不会向源磁盘写入任何数据。恢复出的文件必须保存到另一块磁盘。</p>
+      <div class="grid-2">
+        <div class="mode selected" id="modeDir" onclick="setMode('dir')">
+          <span class="chip ok tag">推荐</span>
+          <div class="t"><span class="ico">📁</span>指定目录找回</div>
+          <p>找回某个文件夹（及其子文件夹）中被删除的文件。通过文件系统元数据（NTFS MFT / FAT 目录项 / APFS 目录）定位，<b>保留原文件名与目录结构</b>，速度快。</p>
+          <p class="small">适用：误删、清空回收站、Shift+Delete、命令行删除。</p>
+        </div>
+        <div class="mode" id="modeFull" onclick="setMode('full')">
+          <div class="t"><span class="ico">💽</span>全盘找回</div>
+          <p>扫描整个分区或物理磁盘：先读取文件系统元数据，再逐扇区按文件签名“雕刻”。能找到格式化、分区丢失、元数据损坏后的文件，但<b>雕刻结果没有原文件名和路径</b>，耗时较长。</p>
+          <p class="small">适用：格式化、分区表损坏、目录结构已被覆盖。</p>
+        </div>
+      </div>
+
+      <div class="grid-main-side mt">
+        <div class="card">
+          <h2>选择来源 <span class="small muted" style="font-weight:400">（只读打开，不会修改）</span></h2>
+          <table>
+            <thead><tr><th></th><th>磁盘 / 卷</th><th>文件系统</th><th>容量</th><th>状态</th><th>支持能力</th></tr></thead>
+            <tbody id="diskBody"></tbody>
+          </table>
+          <div class="row mt-s"><button class="btn">↻ 重新检测</button><span class="small muted">看不到磁盘？请确认已获得权限 → <a href="#" onclick="go('perm');return false">权限向导</a></span></div>
+          <div class="notice warn mt" id="ssdNotice"><span>⚠</span><span><span class="b">系统盘 (C:) 为 SSD 且已启用 TRIM。</span>被删除的数据块可能已被固件擦除，找回成功率显著降低；建议立即停止向该盘写入。</span></div>
+        </div>
+
+        <div class="card">
+          <h2>扫描设置</h2>
+          <div class="field" id="dirField">
+            <label>要找回的目录（原来所在的位置）</label>
+            <div class="row"><input type="text" value="D:\项目\2025-合同" style="flex:1"><button class="btn">浏览…</button></div>
+            <span class="small muted">目录本身已被删除也可以，直接输入原路径即可。</span>
+          </div>
+          <div class="field">
+            <label>扫描深度</label>
+            <div class="radio on"><input type="radio" name="depth" checked><div><b>快速 · 文件系统元数据</b><span>读取 MFT/目录结构中标记为已删除的条目。通常几分钟内完成，保留文件名与路径。</span></div></div>
+            <div class="radio" style="margin-top:6px"><input type="radio" name="depth"><div><b>深度 · 元数据 + 签名雕刻</b><span>在快速扫描基础上逐扇区识别 120+ 种文件格式。1 TB 约需 1–3 小时。</span></div></div>
+          </div>
+          <div class="field">
+            <label>文件类型（留空 = 全部）</label>
+            <div class="row">
+              <span class="chip">图片 ×</span><span class="chip">Office 文档 ×</span><span class="chip">PDF ×</span><button class="btn" style="padding:2px 10px">+ 添加</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>可选</label>
+            <div class="row" style="justify-content:space-between"><span>扫描前为源卷创建只读镜像（更安全，需要同等空间）</span><span class="switch" onclick="this.classList.toggle('on')"></span></div>
+            <div class="row" style="justify-content:space-between"><span>包含文件名损坏的条目（显示为 FILE_#MFT号）</span><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+          </div>
+          <button class="btn primary lg" style="width:100%;justify-content:center" onclick="go('scan')">▶ 开始扫描</button>
+          <p class="small muted mt-s">预计：快速扫描约 2 分钟 · 不占用源盘写入</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 2 扫描 ========== -->
+    <section class="screen" id="s-scan">
+      <h1>正在扫描 D:（数据盘 · NTFS）</h1>
+      <p class="sub">目标：<span class="mono">D:\项目\2025-合同</span> · 指定目录找回 · 深度扫描</p>
+      <div class="card">
+        <div class="phases">
+          <div class="phase done"><b>① 读取分区与引导扇区</b>已完成 · 0.3 s</div>
+          <div class="phase done"><b>② 遍历 MFT 元数据</b>已完成 · 1,048,576 条记录 · 41 s</div>
+          <div class="phase run"><b>③ 签名雕刻（未分配簇）</b>进行中 · 43% · 212 GB / 487 GB</div>
+          <div class="phase"><b>④ 整理与去重</b>等待</div>
+        </div>
+        <div class="bigbar"><i></i></div>
+        <div class="row" style="justify-content:space-between"><span class="small muted">已用 12 分 40 秒 · 预计剩余 约 17 分钟</span><span class="small muted">读取速度 286 MB/s · 读错误 0 扇区</span></div>
+        <div class="stats mt">
+          <div class="stat"><div class="v">1,284</div><div class="k">已发现文件</div></div>
+          <div class="stat"><div class="v">932</div><div class="k">含文件名（元数据）</div></div>
+          <div class="stat"><div class="v">352</div><div class="k">仅签名（无文件名）</div></div>
+          <div class="stat"><div class="v">38.6 GB</div><div class="k">可找回总量</div></div>
+          <div class="stat"><div class="v" style="color:var(--ok)">61%</div><div class="k">可恢复性“高”占比</div></div>
+        </div>
+        <div class="row mt">
+          <button class="btn">⏸ 暂停</button>
+          <button class="btn danger" onclick="openModal('mStop')">■ 停止并查看已找到的文件</button>
+          <button class="btn">最小化到后台</button>
+          <span class="chip warn"><span class="dot"></span>扫描期间：该卷的恢复操作已锁定</span>
+        </div>
+      </div>
+      <div class="grid-2 mt">
+        <div class="card">
+          <h2>实时发现（最新 6 条）</h2>
+          <table>
+            <tbody>
+              <tr><td>合同-华东区-2025Q2.docx</td><td class="muted small">D:\项目\2025-合同\</td><td><span class="q h"></span>高</td></tr>
+              <tr><td>报价单-v3.xlsx</td><td class="muted small">D:\项目\2025-合同\附件\</td><td><span class="q h"></span>高</td></tr>
+              <tr><td>IMG_20250412_1023.jpg</td><td class="muted small">D:\项目\2025-合同\现场照片\</td><td><span class="q m"></span>中</td></tr>
+              <tr><td class="mono">carved_000351.pdf</td><td class="muted small">（签名雕刻，无路径）</td><td><span class="q m"></span>中</td></tr>
+              <tr><td>签字页-扫描.pdf</td><td class="muted small">D:\项目\2025-合同\</td><td><span class="q l"></span>低（部分被覆盖）</td></tr>
+              <tr><td class="mono">carved_000352.zip</td><td class="muted small">（签名雕刻，无路径）</td><td><span class="q h"></span>高</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2>日志</h2>
+          <div class="log">[12:40:01] 打开 \\.\PhysicalDrive1 只读 (FILE_SHARE_READ|WRITE)
+[12:40:01] 分区 2: NTFS, 起始 LBA 1,026,048, 簇大小 4096
+[12:40:02] $MFT 记录数 1,048,576, $Bitmap 已加载
+[12:40:43] 元数据阶段完成: 已删除记录 2,117, 匹配目标目录 932
+[12:40:43] 未分配簇 118,204,416 个, 开始签名雕刻 (16 线程)
+[12:52:41] 雕刻 212 GB, 命中 352, 跳过已分配簇
+</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 3 结果 ========== -->
+    <section class="screen" id="s-results">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <div><h1 style="margin:0">扫描结果 · D: 数据盘</h1><span class="small muted">完成于 13:10 · 共 1,284 个文件 · 38.6 GB · 会话已自动保存，可随时回到此页</span></div>
+        <div class="row"><button class="btn">导出清单 (CSV)</button><button class="btn" onclick="go('home')">重新扫描</button></div>
+      </div>
+      <div class="results">
+        <div class="card">
+          <div class="hd">浏览方式 <select style="margin-left:auto;padding:2px 6px;font-size:12px"><option>按原目录</option><option>按文件类型</option><option>按删除时间</option></select></div>
+          <div class="bd tree">
+            <div class="on">📁 D:\项目\2025-合同 <span class="cnt">932</span></div>
+            <div class="l1">📁 附件 <span class="cnt">214</span></div>
+            <div class="l1">📁 现场照片 <span class="cnt">488</span></div>
+            <div class="l2">📁 2025-04 <span class="cnt">301</span></div>
+            <div class="l2">📁 2025-05 <span class="cnt">187</span></div>
+            <div class="l1">📁 旧版本 <span class="cnt">61</span></div>
+            <div style="margin-top:8px">🧩 签名雕刻（无路径） <span class="cnt">352</span></div>
+            <div class="l1">🖼 图片 <span class="cnt">201</span></div>
+            <div class="l1">📄 文档 / PDF <span class="cnt">97</span></div>
+            <div class="l1">🗜 压缩包 <span class="cnt">54</span></div>
+            <div style="margin-top:8px">⚠ 文件名损坏 <span class="cnt">12</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="filters">
+            <input type="search" placeholder="搜索文件名 / 路径 / 扩展名…">
+            <select><option>可恢复性：全部</option><option>仅高</option><option>高 + 中</option></select>
+            <select><option>大小：全部</option><option>&gt; 1 MB</option><option>&gt; 100 MB</option></select>
+            <select><option>删除时间：全部</option><option>24 小时内</option><option>7 天内</option></select>
+            <label class="small row" style="gap:4px"><input type="checkbox" checked> 隐藏 0 字节</label>
+          </div>
+          <div class="bd" style="padding:0">
+            <table>
+              <thead><tr><th><input type="checkbox" checked></th><th>文件名</th><th>原路径</th><th>大小</th><th>删除时间</th><th>可恢复性</th><th>来源</th></tr></thead>
+              <tbody>
+                <tr class="sel clickable"><td><input type="checkbox" checked></td><td>合同-华东区-2025Q2.docx</td><td class="muted small">D:\项目\2025-合同\</td><td>1.2 MB</td><td class="small">2025-05-02 14:21</td><td><span class="q h"></span>高</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox" checked></td><td>报价单-v3.xlsx</td><td class="muted small">…\附件\</td><td>356 KB</td><td class="small">2025-05-02 14:21</td><td><span class="q h"></span>高</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox" checked></td><td>IMG_20250412_1023.jpg</td><td class="muted small">…\现场照片\2025-04\</td><td>4.8 MB</td><td class="small">2025-05-02 14:20</td><td><span class="q m"></span>中</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td>签字页-扫描.pdf</td><td class="muted small">D:\项目\2025-合同\</td><td>2.1 MB</td><td class="small">2025-05-02 14:21</td><td><span class="q l"></span>低 · 38% 已覆盖</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox" checked></td><td>会议纪要-0418.docx</td><td class="muted small">D:\项目\2025-合同\</td><td>88 KB</td><td class="small">2025-04-30 09:12</td><td><span class="q h"></span>高</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">carved_000351.pdf</td><td class="muted small">（无路径）</td><td>~1.9 MB</td><td class="small">未知</td><td><span class="q m"></span>中</td><td class="small">签名</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">FILE_#48213.xlsx</td><td class="muted small">…\旧版本\</td><td>1.1 MB</td><td class="small">2025-03-11 17:40</td><td><span class="q m"></span>中 · 文件名损坏</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox" checked></td><td>DSC_0391.NEF</td><td class="muted small">…\现场照片\2025-05\</td><td>28.4 MB</td><td class="small">2025-05-01 18:02</td><td><span class="q h"></span>高</td><td class="small">MFT</td></tr>
+                <tr class="clickable"><td><input type="checkbox" checked></td><td>附件清单.pdf</td><td class="muted small">…\附件\</td><td>412 KB</td><td class="small">2025-05-02 14:21</td><td><span class="q h"></span>高</td><td class="small">MFT</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="hd">预览</div>
+          <div class="bd">
+            <div class="preview">📄 合同-华东区-2025Q2.docx<br><span class="small">（文档首页文本预览 / 图片缩略图 / 十六进制）</span></div>
+            <div class="kv">
+              <b>文件名</b><span>合同-华东区-2025Q2.docx</span>
+              <b>原路径</b><span class="mono">D:\项目\2025-合同\</span>
+              <b>大小</b><span>1,258,112 字节</span>
+              <b>删除时间</b><span>2025-05-02 14:21:07</span>
+              <b>修改时间</b><span>2025-04-28 11:03:55</span>
+              <b>MFT 记录</b><span class="mono">#51244（已删除，未被重用）</span>
+              <b>数据簇</b><span>308 簇，连续，<span style="color:var(--ok)">0% 被覆盖</span></span>
+              <b>可恢复性</b><span><span class="q h"></span>高 — 数据块完整，签名匹配 DOCX</span>
+            </div>
+            <div class="hex">0000  50 4B 03 04 14 00 06 00  PK......
+0008  08 00 00 00 21 00 D1 7A  ....!..z
+0010  9B 1C 68 01 00 00 F8 05  ..h.....
+0018  00 00 13 00 08 02 5B 43  ......[C</div>
+          </div>
+        </div>
+      </div>
+      <div class="footbar">
+        <span>已选 <b>7</b> 个文件 · 37.2 MB</span>
+        <span class="small muted">· 可恢复性“低”的文件默认不勾选</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn">全选“高”</button>
+        <button class="btn primary lg" onclick="go('recover')">恢复所选文件 →</button>
+      </div>
+    </section>
+
+    <!-- ========== 4 恢复 ========== -->
+    <section class="screen" id="s-recover">
+      <h1>恢复文件</h1>
+      <p class="sub">已选 7 个文件 · 37.2 MB</p>
+      <div class="grid-main-side">
+        <div>
+          <div class="card">
+            <h2>保存到</h2>
+            <div class="row"><input type="text" value="E:\恢复\2025-05-03_D盘_2025-合同" style="flex:1"><button class="btn">浏览…</button></div>
+            <div class="notice warn mt-s"><span>⚠</span><span><span class="b">不能保存到源磁盘 D:。</span>写入源盘会覆盖尚未恢复的数据。程序会在 Rust 端拒绝同盘目标，而不仅是禁用按钮。</span></div>
+            <div class="row mt-s small muted">目标 E: 可用空间 412 GB ✓ · 预计占用 37.2 MB</div>
+          </div>
+          <div class="card mt">
+            <h2>选项</h2>
+            <div class="setrow"><div>保留原目录结构<div class="d">按 D:\项目\2025-合同\… 重建子文件夹；雕刻文件放入 _carved\类型\</div></div><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+            <div class="setrow"><div>同名文件处理<div class="d">目标已存在同名文件时</div></div><select><option>自动重命名 (1)</option><option>跳过</option><option>覆盖</option></select></div>
+            <div class="setrow"><div>恢复后校验<div class="d">对比大小、按格式校验文件头/尾（ZIP/JPEG/PDF 结构完整性）</div></div><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+            <div class="setrow" style="border:none"><div>恢复原时间戳<div class="d">保留创建/修改时间（元数据来源可用时）</div></div><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+          </div>
+          <div class="row mt"><button class="btn primary lg" onclick="showRecoverProgress()">开始恢复</button><button class="btn" onclick="go('results')">← 返回结果</button></div>
+        </div>
+        <div class="card" id="recProg">
+          <h2>恢复进度</h2>
+          <div class="bigbar"><i style="width:71%"></i></div>
+          <div class="small muted">5 / 7 · 26.4 MB / 37.2 MB · 剩余约 4 秒</div>
+          <table class="mt-s">
+            <tbody>
+              <tr><td>合同-华东区-2025Q2.docx</td><td><span class="chip ok"><span class="dot"></span>成功 · 校验通过</span></td></tr>
+              <tr><td>报价单-v3.xlsx</td><td><span class="chip ok"><span class="dot"></span>成功</span></td></tr>
+              <tr><td>IMG_20250412_1023.jpg</td><td><span class="chip warn"><span class="dot"></span>成功 · 校验：尾部缺失</span></td></tr>
+              <tr><td>会议纪要-0418.docx</td><td><span class="chip ok"><span class="dot"></span>成功</span></td></tr>
+              <tr><td>DSC_0391.NEF</td><td><span class="chip bad"><span class="dot"></span>失败 · 读扇区错误 (I/O)</span></td></tr>
+              <tr><td>附件清单.pdf</td><td><span class="chip"><span class="dot"></span>写入中…</span></td></tr>
+            </tbody>
+          </table>
+          <div class="row mt"><button class="btn">打开目标文件夹</button><button class="btn">导出报告</button><button class="btn danger">取消</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 扫描记录 ========== -->
+    <section class="screen" id="s-sessions">
+      <h1>扫描记录</h1>
+      <p class="sub">扫描结果会自动保存在本机数据目录，关闭程序后可继续选择与恢复，无需重新扫描（源盘未再写入的前提下）。</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>时间</th><th>来源</th><th>模式</th><th>发现</th><th>已恢复</th><th>状态</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>2025-05-03 13:10</td><td>D: 数据盘 · NTFS</td><td>指定目录 · 深度</td><td>1,284</td><td>6</td><td><span class="chip ok"><span class="dot"></span>完成</span></td><td><button class="btn" onclick="go('results')">打开</button> <button class="btn">删除</button></td></tr>
+            <tr><td>2025-05-01 09:42</td><td>SanDisk 64G · exFAT</td><td>全盘 · 深度</td><td>3,902</td><td>3,811</td><td><span class="chip ok"><span class="dot"></span>完成</span></td><td><button class="btn">打开</button> <button class="btn">删除</button></td></tr>
+            <tr><td>2025-04-28 22:15</td><td>C: 系统盘 · NTFS</td><td>指定目录 · 快速</td><td>12</td><td>0</td><td><span class="chip warn"><span class="dot"></span>已中止</span></td><td><button class="btn">继续</button> <button class="btn">删除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========== 设置 ========== -->
+    <section class="screen" id="s-settings">
+      <h1>设置</h1>
+      <div class="tabs">
+        <button class="tab on" onclick="tab(this,'t-general')">通用</button>
+        <button class="tab" onclick="tab(this,'t-sig')">签名库</button>
+        <button class="tab" onclick="tab(this,'t-scan')">扫描与性能</button>
+        <button class="tab" onclick="tab(this,'t-update')">更新</button>
+      </div>
+      <div class="tabpane on card" id="t-general">
+        <div class="setrow"><div>语言</div><select><option>跟随系统</option><option>简体中文</option><option>繁體中文</option><option>English</option><option>日本語</option></select></div>
+        <div class="setrow"><div>主题</div><select><option>跟随系统</option><option>浅色</option><option>深色</option></select></div>
+        <div class="setrow"><div>数据目录<div class="d mono">C:\Users\Administrator\AppData\Roaming\com.mjgroup.filerescue</div></div><button class="btn">打开</button></div>
+        <div class="setrow" style="border:none"><div>关闭窗口时<div class="d">扫描进行中默认最小化到托盘而不是退出</div></div><select><option>最小化到托盘</option><option>询问</option><option>退出</option></select></div>
+      </div>
+      <div class="tabpane" id="t-sig">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:10px">
+            <div><b>文件签名库</b> <span class="small muted">· 内置 126 项 · 自定义 2 项 · 雕刻阶段使用</span></div>
+            <div class="row"><input type="search" placeholder="搜索扩展名 / 名称"><button class="btn" onclick="openModal('mSig')">+ 新增签名</button><button class="btn">导入</button><button class="btn">导出</button><button class="btn">恢复默认</button></div>
+          </div>
+          <table>
+            <thead><tr><th>启用</th><th>扩展名</th><th>名称</th><th>文件头 (hex)</th><th>文件尾 / 大小规则</th><th>来源</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><span class="switch on"></span></td><td>jpg</td><td>JPEG 图片</td><td class="mono">FF D8 FF</td><td class="mono">FF D9 · 最大 64 MB</td><td><span class="chip">内置</span></td><td><button class="btn">编辑</button></td></tr>
+              <tr><td><span class="switch on"></span></td><td>docx / xlsx / pptx</td><td>Office Open XML</td><td class="mono">50 4B 03 04</td><td class="mono">解析 ZIP 中央目录</td><td><span class="chip">内置</span></td><td><button class="btn">编辑</button></td></tr>
+              <tr><td><span class="switch on"></span></td><td>pdf</td><td>PDF 文档</td><td class="mono">25 50 44 46</td><td class="mono">%%EOF · 最大 512 MB</td><td><span class="chip">内置</span></td><td><button class="btn">编辑</button></td></tr>
+              <tr><td><span class="switch"></span></td><td>mov / mp4</td><td>ISO BMFF 视频</td><td class="mono">?? ?? ?? ?? 66 74 79 70</td><td class="mono">按 box 长度链</td><td><span class="chip">内置</span></td><td><button class="btn">编辑</button> <button class="btn">停用</button></td></tr>
+              <tr><td><span class="switch on"></span></td><td>dwg</td><td>AutoCAD 图纸（自定义）</td><td class="mono">41 43 31 30</td><td class="mono">最大 200 MB</td><td><span class="chip info">自定义</span></td><td><button class="btn">编辑</button> <button class="btn danger">删除</button></td></tr>
+              <tr><td><span class="switch on"></span></td><td>sqlite</td><td>SQLite 数据库（自定义）</td><td class="mono">53 51 4C 69 74 65 20 66</td><td class="mono">按页大小 × 页数</td><td><span class="chip info">自定义</span></td><td><button class="btn">编辑</button> <button class="btn danger">删除</button></td></tr>
+            </tbody>
+          </table>
+          <p class="small muted mt-s">内置项只能停用不能删除；“恢复默认”会还原内置项并保留自定义项。签名库以 TOML 文件存储于数据目录，支持导入/导出到另一台机器。</p>
+        </div>
+      </div>
+      <div class="tabpane card" id="t-scan">
+        <div class="setrow"><div>并发读取线程<div class="d">HDD 建议 1–2，SSD/NVMe 可 8–16</div></div><select><option>自动（按磁盘类型）</option><option>1</option><option>4</option><option>8</option><option>16</option></select></div>
+        <div class="setrow"><div>遇到坏扇区<div class="d">读取失败时的策略</div></div><select><option>重试 3 次后跳过</option><option>立即跳过</option><option>停止扫描</option></select></div>
+        <div class="setrow"><div>扫描结果缓存上限<div class="d">超过后提示清理旧会话</div></div><select><option>2 GB</option><option>10 GB</option><option>不限制</option></select></div>
+        <div class="setrow" style="border:none"><div>深度扫描时跳过已分配簇<div class="d">只雕刻未分配空间，速度更快；关闭后可找到被“文件内嵌”的数据</div></div><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+      </div>
+      <div class="tabpane card" id="t-update">
+        <div class="setrow"><div>当前版本 <span class="mono">0.1.0</span><div class="d">已是最新 · 上次检查 今天 09:00</div></div><button class="btn">检查更新</button></div>
+        <div class="setrow"><div>自动检查更新<div class="d">仅检查，不自动下载；离线时静默跳过</div></div><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+        <div class="setrow" style="border:none"><div>下载通道<div class="d">中国大陆用户可选加速镜像；签名校验不受影响</div></div><select><option>自动</option><option>GitHub 官方</option><option>GH-Proxy 镜像</option></select></div>
+      </div>
+    </section>
+
+    <!-- ========== 权限向导 ========== -->
+    <section class="screen" id="s-perm">
+      <h1>权限向导</h1>
+      <p class="sub">读取磁盘原始扇区需要系统授权。程序只以只读方式打开磁盘，不会改变系统安全策略。</p>
+      <div id="permWin">
+        <div class="steps">
+          <div class="wstep done"><div class="n">✓</div><div><b>管理员权限</b><div class="small muted">已以管理员身份运行。可直接读取 \\.\PhysicalDriveN 与 \\.\C:。</div></div></div>
+          <div class="wstep"><div class="n">2</div><div style="flex:1"><b>BitLocker 卷</b><div class="small muted">E: 已加密且已解锁 — 通过卷路径 \\.\E: 可读取明文；若选择物理磁盘路径将只能读到密文。程序会自动选择正确路径。</div></div><span class="chip ok"><span class="dot"></span>可用</span></div>
+          <div class="wstep"><div class="n">3</div><div style="flex:1"><b>关闭会写入源盘的程序</b><div class="small muted">检测到 Windows Search 索引、OneDrive 正在向 D: 写入。建议暂停以免覆盖数据。</div></div><button class="btn">查看详情</button></div>
+        </div>
+        <div class="notice info mt"><span>ⓘ</span><span>未以管理员运行时，会显示“以管理员身份重新启动”按钮，通过 UAC 提权后重新打开程序（不保存密码、不常驻服务）。</span></div>
+      </div>
+      <div id="permMac" style="display:none">
+        <div class="steps">
+          <div class="wstep done"><div class="n">✓</div><div><b>管理员授权（读取 /dev/rdiskN）</b><div class="small muted">通过系统授权对话框获得；仅在扫描期间由特权助手只读打开设备。</div></div></div>
+          <div class="wstep"><div class="n">2</div><div style="flex:1"><b>完全磁盘访问（TCC）</b><div class="small muted">macOS 要求在「系统设置 → 隐私与安全性 → 完全磁盘访问」中勾选本程序，否则无法读取部分卷。授权后需要重新启动程序。</div></div><button class="btn">打开系统设置</button></div>
+          <div class="wstep"><div class="n">3</div><div style="flex:1"><b>FileVault 加密卷</b><div class="small muted">内置 APFS 卷默认启用 FileVault，原始设备读到的是密文，<b>签名雕刻不可用</b>；指定目录找回将通过 APFS 元数据与本地快照（Time Machine 本地快照）尝试。外置未加密磁盘不受影响。</div></div><span class="chip warn"><span class="dot"></span>受限</span></div>
+        </div>
+      </div>
+      <div class="card mt">
+        <h2>当前状态</h2>
+        <div class="row">
+          <span class="chip ok"><span class="dot"></span>提权：已获得</span>
+          <span class="chip ok"><span class="dot"></span>设备枚举：4 个磁盘</span>
+          <span class="chip warn"><span class="dot"></span>只读打开 C:：待验证</span>
+          <span class="chip"><span class="dot"></span>助手版本：未确认</span>
+        </div>
+        <div class="row mt-s"><button class="btn">重新检测</button></div>
+      </div>
+    </section>
+
+    <!-- ========== 诊断与关于 ========== -->
+    <section class="screen" id="s-about">
+      <h1>诊断与关于</h1>
+      <div class="grid-2">
+        <div class="card">
+          <h2>组件状态</h2>
+          <table>
+            <tbody>
+              <tr><td>GUI</td><td class="mono">0.1.0 (a1b2c3d)</td><td><span class="chip ok"><span class="dot"></span>正常</span></td></tr>
+              <tr><td>恢复核心 (recovery-core)</td><td class="mono">0.1.0</td><td><span class="chip ok"><span class="dot"></span>正常</span></td></tr>
+              <tr><td>特权助手</td><td class="mono">0.1.0</td><td><span class="chip ok"><span class="dot"></span>版本一致</span></td></tr>
+              <tr><td>签名库</td><td class="mono">2025.05 · 128 项</td><td><span class="chip ok"><span class="dot"></span>已加载</span></td></tr>
+              <tr><td>WebView</td><td class="mono">WebView2 124.0</td><td><span class="chip ok"><span class="dot"></span>正常</span></td></tr>
+            </tbody>
+          </table>
+          <div class="row mt"><button class="btn">导出诊断（已脱敏）</button><button class="btn">打开日志目录</button></div>
+          <p class="small muted mt-s">诊断导出不包含卷名、文件名、路径与用户内容；仅本地保存，不自动上传。</p>
+        </div>
+        <div class="card">
+          <h2>关于</h2>
+          <p><b>FileRescue 文件找回</b> 0.1.0<br><span class="muted">M&amp;J Group · 473276@qq.com</span></p>
+          <p class="small muted">支持平台：Windows 10/11 x64 · macOS 12+（Apple Silicon / Intel）</p>
+          <h2 class="mt">开源组件</h2>
+          <table>
+            <tbody>
+              <tr><td>ntfs (Rust)</td><td class="small muted">MIT / Apache-2.0</td></tr>
+              <tr><td>fatfs (Rust)</td><td class="small muted">MIT</td></tr>
+              <tr><td>The Sleuth Kit（可选 sidecar）</td><td class="small muted">IPL / CPL / GPL</td></tr>
+              <tr><td>PhotoRec 签名规则（参考）</td><td class="small muted">GPLv2+</td></tr>
+              <tr><td>Tauri 2 / Vue 3</td><td class="small muted">MIT / Apache-2.0</td></tr>
+            </tbody>
+          </table>
+          <div class="row mt"><button class="btn">查看许可证</button><button class="btn">源码</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 模态：停止扫描 -->
+<div class="modal-bg" id="mStop" onclick="if(event.target===this)closeModal('mStop')">
+  <div class="modal" role="dialog">
+    <div class="hd">停止扫描？</div>
+    <div class="bd">已扫描 43%，当前找到 1,284 个文件。停止后可以查看并恢复已找到的文件，之后也可以从扫描记录中“继续”扫描剩余部分。</div>
+    <div class="ft"><button class="btn" onclick="closeModal('mStop')">继续扫描</button><button class="btn danger" onclick="closeModal('mStop');go('results')">停止并查看结果</button></div>
+  </div>
+</div>
+
+<!-- 模态：新增签名 -->
+<div class="modal-bg" id="mSig" onclick="if(event.target===this)closeModal('mSig')">
+  <div class="modal" role="dialog">
+    <div class="hd">新增文件签名</div>
+    <div class="bd">
+      <div class="field"><label>扩展名（多个用 / 分隔）</label><input type="text" placeholder="例如 psd"></div>
+      <div class="field"><label>显示名称</label><input type="text" placeholder="Photoshop 文档"></div>
+      <div class="field"><label>文件头 (hex，?? 表示任意字节)</label><input type="text" class="mono" placeholder="38 42 50 53"></div>
+      <div class="field"><label>文件头偏移</label><input type="text" class="mono" value="0"></div>
+      <div class="grid-2">
+        <div class="field"><label>文件尾 (hex，可空)</label><input type="text" class="mono"></div>
+        <div class="field"><label>最大大小</label><input type="text" value="512 MB"></div>
+      </div>
+      <div class="notice info"><span>ⓘ</span><span>保存前校验：hex 格式、重复扩展名、最大大小范围。可点击“测试”用一个样例文件验证签名能命中。</span></div>
+    </div>
+    <div class="ft"><button class="btn">用样例文件测试</button><button class="btn" onclick="closeModal('mSig')">取消</button><button class="btn primary" onclick="closeModal('mSig')">保存</button></div>
+  </div>
+</div>
+
+<script>
+  const disksWin = [
+    {n:'C: 系统盘 (Samsung 980 NVMe)', fs:'NTFS', cap:'476 GB / 1 TB', pct:48, st:'ok', stt:'健康 · SSD/TRIM', cap2:'元数据 + 雕刻'},
+    {n:'D: 数据盘 (WD Blue HDD)', fs:'NTFS', cap:'812 GB / 2 TB', pct:41, st:'ok', stt:'健康', cap2:'元数据 + 雕刻', sel:true},
+    {n:'E: 备份 (BitLocker 已解锁)', fs:'NTFS', cap:'1.5 TB / 2 TB', pct:76, st:'ok', stt:'已解锁', cap2:'元数据 + 雕刻'},
+    {n:'SanDisk Ultra 64G (U盘)', fs:'exFAT', cap:'12 GB / 58 GB', pct:20, st:'ok', stt:'健康', cap2:'元数据 + 雕刻'},
+    {n:'PhysicalDrive3 (未知分区表)', fs:'—', cap:'— / 500 GB', pct:0, st:'warn', stt:'分区表损坏', cap2:'仅雕刻 · 全盘模式'},
+  ];
+  const disksMac = [
+    {n:'Macintosh HD — 数据 (disk3s5)', fs:'APFS · FileVault', cap:'310 GB / 994 GB', pct:31, st:'warn', stt:'加密 · 雕刻不可用', cap2:'元数据 + 本地快照'},
+    {n:'外置 LaCie 2TB (disk4s2)', fs:'APFS', cap:'1.1 TB / 2 TB', pct:55, st:'ok', stt:'健康', cap2:'元数据 + 雕刻', sel:true},
+    {n:'Transfer (disk5s1)', fs:'exFAT', cap:'20 GB / 128 GB', pct:16, st:'ok', stt:'健康', cap2:'元数据 + 雕刻'},
+    {n:'旧 Time Machine (disk6s2)', fs:'HFS+', cap:'890 GB / 1 TB', pct:89, st:'ok', stt:'健康', cap2:'元数据 + 雕刻'},
+    {n:'Windows 移动硬盘 (disk7s1)', fs:'NTFS', cap:'400 GB / 1 TB', pct:40, st:'ok', stt:'健康 · 只读', cap2:'元数据 + 雕刻'},
+  ];
+  function renderDisks(list){
+    document.getElementById('diskBody').innerHTML = list.map(d=>`
+      <tr class="clickable ${d.sel?'sel':''}">
+        <td><input type="radio" name="disk" ${d.sel?'checked':''}></td>
+        <td>${d.n}</td><td>${d.fs}</td>
+        <td><div class="cap"><span class="small">${d.cap}</span><div class="bar ${d.st}"><i style="width:${d.pct}%"></i></div></div></td>
+        <td><span class="chip ${d.st}"><span class="dot"></span>${d.stt}</span></td>
+        <td class="small">${d.cap2}</td>
+      </tr>`).join('');
+  }
+  function setOS(v){
+    const mac = v==='mac';
+    document.getElementById('chipOS').textContent = mac ? 'macOS 15 · Apple Silicon' : 'Windows 11 · x64';
+    document.getElementById('chipPrivText').textContent = mac ? '已授权 · 完全磁盘访问 待确认' : '管理员权限 ✓';
+    document.getElementById('chipPriv').className = 'chip ' + (mac?'warn':'ok');
+    document.getElementById('permWin').style.display = mac?'none':'';
+    document.getElementById('permMac').style.display = mac?'':'none';
+    document.getElementById('ssdNotice').innerHTML = mac
+      ? '<span>⚠</span><span><span class="b">Macintosh HD 已启用 FileVault。</span>原始设备只能读到密文，签名雕刻不可用；指定目录找回将依赖 APFS 元数据与本地快照。建议优先检查 Time Machine。</span>'
+      : '<span>⚠</span><span><span class="b">系统盘 (C:) 为 SSD 且已启用 TRIM。</span>被删除的数据块可能已被固件擦除，找回成功率显著降低；建议立即停止向该盘写入。</span>';
+    renderDisks(mac?disksMac:disksWin);
+  }
+  renderDisks(disksWin);
+  function go(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active', s.id==='s-'+id));
+    document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active', n.dataset.s===id));
+    const order=['home','scan','results','recover']; const i=order.indexOf(id);
+    document.querySelectorAll('.nav').forEach(n=>{ const j=order.indexOf(n.dataset.s); n.classList.toggle('done', j>-1 && i>-1 && j<i); });
+    document.querySelector('.main').scrollTop=0;
+  }
+  function setMode(m){
+    document.getElementById('modeDir').classList.toggle('selected', m==='dir');
+    document.getElementById('modeFull').classList.toggle('selected', m==='full');
+    document.getElementById('dirField').style.display = m==='dir'?'':'none';
+    document.getElementById('chipMode').textContent = '模式：' + (m==='dir'?'指定目录找回':'全盘找回');
+  }
+  setMode('dir');
+  function toggleTheme(){ const h=document.documentElement; h.dataset.theme = h.dataset.theme==='dark'?'light':'dark'; }
+  function tab(btn,id){ btn.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t===btn)); document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('on',p.id===id)); }
+  function openModal(id){ document.getElementById(id).classList.add('on'); }
+  function closeModal(id){ document.getElementById(id).classList.remove('on'); }
+  function showRecoverProgress(){ document.getElementById('recProg').scrollIntoView({behavior:'smooth'}); }
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') document.querySelectorAll('.modal-bg.on').forEach(m=>m.classList.remove('on')); });
+  // 点击磁盘行选中
+  document.getElementById('diskBody').addEventListener('click', e=>{ const tr=e.target.closest('tr'); if(!tr) return; tr.parentElement.querySelectorAll('tr').forEach(r=>r.classList.remove('sel')); tr.classList.add('sel'); tr.querySelector('input').checked=true; });
+</script>
+</body>
+</html>

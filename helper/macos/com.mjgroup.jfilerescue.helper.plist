@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.mjgroup.jfilerescue.helper</string>
+  <key>BundleProgram</key><string>Contents/MacOS/jfilerescue-helper</string>
+  <key>MachServices</key><dict><key>com.mjgroup.jfilerescue.helper</key><true/></dict>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.mjgroup.jfilerescue</string></array>
+</dict>
+</plist>

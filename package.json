@@ -1,0 +1,37 @@
+{
+  "name": "jfilerescue",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "JFileRescue — 跨平台只读文件找回工具",
+  "author": "M&J Group <473276@qq.com>",
+  "license": "MIT OR Apache-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "tauri": "tauri",
+    "typecheck": "vue-tsc --noEmit",
+    "icons": "node scripts/make-icon.mjs && tauri icon src-tauri/icons/source.png",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.4.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-opener": "^2.2.6",
+    "@tauri-apps/plugin-process": "^2.2.0",
+    "@tauri-apps/plugin-store": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.6.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@tauri-apps/cli": "^2.4.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "playwright": "^1.50.0",
+    "typescript": "~5.7.3",
+    "vite": "^6.1.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

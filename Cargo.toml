@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/recovery-core",
+    "crates/recovery-platform",
+    "crates/recovery-cli",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["M&J Group <473276@qq.com>"]
+repository = "https://github.com/mjgroup/jfilerescue"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+log = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
