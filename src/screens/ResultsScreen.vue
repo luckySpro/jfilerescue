@@ -155,16 +155,16 @@ const qLabel = (q: Quality) => t.value.results.qLabel[q];
         </div>
         <div class="bd" style="padding: 0">
           <table class="files">
-            <thead><tr><th><input type="checkbox" :checked="allPageSelected" @change="togglePage" /></th><th>{{ t.results.colName }}</th><th>{{ t.results.colPath }}</th><th>{{ t.results.colSize }}</th><th>{{ t.results.colTime }}</th><th>{{ t.results.colQuality }}</th><th>{{ t.results.colSource }}</th></tr></thead>
+            <thead><tr><th><input type="checkbox" :checked="allPageSelected" @change="togglePage" /></th><th>{{ t.results.colName }}</th><th>{{ t.results.colPath }}</th><th>{{ t.results.colSize }}</th><th class="col-time">{{ t.results.colTime }}</th><th>{{ t.results.colQuality }}</th><th class="col-src">{{ t.results.colSource }}</th></tr></thead>
             <tbody>
               <tr v-for="f in files" :key="f.id" class="clickable" :class="{ sel: active?.id === f.id }" @click="show(f)">
                 <td @click.stop><input type="checkbox" :checked="selection.has(f.id)" @change="toggle(f)" /></td>
                 <td class="name" :class="{ mono: f.source === 'carved' || f.name_damaged }" :title="f.name">{{ f.name }}<span v-if="f.name_damaged" class="chip warn" style="margin-left: 6px">{{ t.results.damagedTag }}</span></td>
                 <td class="path muted small" :title="f.dir ?? ''">{{ f.dir ?? t.results.noPath }}</td>
                 <td class="nowrap">{{ humanBytes(f.size) }}</td>
-                <td class="small nowrap">{{ f.deleted_at ? fmtTime(f.deleted_at) : t.results.unknown }}</td>
+                <td class="small nowrap col-time">{{ f.deleted_at ? fmtTime(f.deleted_at) : t.results.unknown }}</td>
                 <td class="nowrap" :title="f.note"><span class="q" :class="f.quality"></span>{{ qLabel(f.quality) }}<span v-if="f.overwritten_pct" class="small muted"> · {{ f.overwritten_pct }}%</span></td>
-                <td class="small nowrap">{{ f.source === 'metadata' ? t.results.srcMeta : t.results.srcCarved }}</td>
+                <td class="small nowrap col-src">{{ f.source === 'metadata' ? t.results.srcMeta : t.results.srcCarved }}</td>
               </tr>
             </tbody>
           </table>

@@ -1,6 +1,6 @@
-# FileRescue 文件找回 — 方案与界面说明（v0.1 待确认）
+# JFileRescue — 方案与界面说明
 
-> 状态：**界面原型阶段**，未开始开发。确认本文档与 `docs/ui-mockup/index.html` 后进入骨架阶段。
+> 状态：**已确认并进入开发**（2026-10-20）。确认项：产品名 **JFileRescue**，Bundle ID `com.mjgroup.jfilerescue`；**HFS+ 不做**（macOS 10.13 起为遗留格式，新卷默认 APFS；放弃后无任何 GPL 组件）；只读镜像功能 **做**；CLI **保留**；图标重新生成。当前实现状态见 `docs/VALIDATION.md`。
 
 ## 1. 产品定义
 
@@ -98,13 +98,13 @@ filerescue/
 
 原型支持：浅/深色切换、Windows/macOS 模拟切换（磁盘列表与权限向导随平台变化）、窄屏折叠侧栏、模态 Escape 关闭。
 
-## 5. 需要你确认的问题
+## 5. 已确认的决策
 
-1. **产品名**：暂定 `FileRescue 文件找回`，Bundle ID `com.mjgroup.filerescue`。是否沿用？
-2. **HFS+ 是否必须第一版支持**？若否，可去掉 TSK sidecar，第一版完全无 GPL 组件。
-3. **只读镜像功能**（扫描前把整个卷镜像到另一块盘再扫）是否第一版需要？
-4. **是否需要 CLI**（无人值守 / 脚本调用）？建议保留，用于自动化测试。
-5. 界面布局、术语、流程步骤是否符合预期？有无需要增删的页面或字段？
+1. 产品名 `JFileRescue`，Bundle ID `com.mjgroup.jfilerescue`。
+2. HFS+ 不支持（第一版无 TSK sidecar，无 GPL 组件）。
+3. 扫描前"只读镜像"功能：已实现（`recovery-core::image` + CLI `jfr image` + 界面开关）。
+4. CLI 保留（`crates/recovery-cli`，二进制 `jfr`）。
+5. 图标：`public/icon.svg` → `pnpm icons` 生成全部平台尺寸。
 
 ## 6. 确认后的开发顺序
 

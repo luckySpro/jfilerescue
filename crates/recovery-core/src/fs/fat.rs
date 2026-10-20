@@ -33,7 +33,7 @@ pub fn classify_fat(b: &[u8]) -> FsKind {
     if bps == 0 || spc == 0 || fatsz == 0 || total == 0 {
         return FsKind::Unknown;
     }
-    let root_sectors = (root_entries * 32 + bps - 1) / bps;
+    let root_sectors = (root_entries * 32).div_ceil(bps);
     let data_sectors = total.saturating_sub(reserved + nfats * fatsz + root_sectors);
     let clusters = data_sectors / spc;
     if clusters < 4085 {
@@ -94,7 +94,7 @@ impl FatVolume {
         let fatsz32 = le_u32(&b, 36) as u64;
         let total = if total16 != 0 { total16 } else { total32 };
         let fatsz = if fatsz16 != 0 { fatsz16 } else { fatsz32 };
-        let root_dir_sectors = (root_entries * 32 + bps - 1) / bps;
+        let root_dir_sectors = (root_entries * 32).div_ceil(bps);
         let root_dir_offset = (reserved + nfats * fatsz) * bps;
         let data_offset = root_dir_offset + root_dir_sectors * bps;
         let data_sectors = total.saturating_sub(reserved + nfats * fatsz + root_dir_sectors);
@@ -221,7 +221,7 @@ impl FatVolume {
         let mut out = vec![];
         let mut lfn: Vec<(u8, String)> = vec![];
         let mut lfn_deleted = false;
-        for e in buf.chunks_exact(32) {
+        for e in buf.as_chunks::<32>().0 {
             let first = e[0];
             if first == 0x00 {
                 break;
@@ -545,7 +545,7 @@ impl ExFatVolume {
 
     fn chain(&self, fat: &[u8], first: u32, no_fat_chain: bool, size: u64) -> Vec<u32> {
         if no_fat_chain {
-            let n = (size + self.cluster_size - 1) / self.cluster_size;
+            let n = size.div_ceil(self.cluster_size);
             return (0..n as u32).map(|i| first + i).collect();
         }
         let mut out = vec![];

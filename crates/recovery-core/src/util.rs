@@ -109,7 +109,9 @@ pub fn be_u32(b: &[u8], o: usize) -> u32 {
 /// Decode UTF-16LE, replacing invalid units.
 pub fn utf16le(b: &[u8]) -> String {
     let units: Vec<u16> = b
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     String::from_utf16_lossy(&units)

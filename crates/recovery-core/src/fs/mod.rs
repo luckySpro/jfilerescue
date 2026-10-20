@@ -23,19 +23,19 @@ impl AllocBitmap {
         Self {
             cluster_size,
             clusters,
-            bits: vec![0u8; ((clusters + 7) / 8) as usize],
+            bits: vec![0u8; clusters.div_ceil(8) as usize],
         }
     }
     pub fn all_allocated(cluster_size: u64, clusters: u64) -> Self {
         Self {
             cluster_size,
             clusters,
-            bits: vec![0xFF; ((clusters + 7) / 8) as usize],
+            bits: vec![0xFF; clusters.div_ceil(8) as usize],
         }
     }
     pub fn from_raw(cluster_size: u64, clusters: u64, raw: Vec<u8>) -> Self {
         let mut bits = raw;
-        bits.resize(((clusters + 7) / 8) as usize, 0xFF);
+        bits.resize(clusters.div_ceil(8) as usize, 0xFF);
         Self {
             cluster_size,
             clusters,
@@ -79,11 +79,7 @@ impl AllocBitmap {
                 }
             }
         }
-        if total == 0 {
-            0
-        } else {
-            ((alloc * 100) / total) as u8
-        }
+        (alloc * 100).checked_div(total).unwrap_or(0) as u8
     }
     /// Iterate contiguous free byte ranges (for carving).
     pub fn free_ranges(&self) -> Vec<crate::model::Extent> {

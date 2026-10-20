@@ -306,11 +306,7 @@ fn run(cli: &Cli) -> recovery_core::Result<()> {
                             eprintln!();
                             last = s.phase;
                         }
-                        let pct = if s.total > 0 {
-                            s.done * 100 / s.total
-                        } else {
-                            0
-                        };
+                        let pct = (s.done * 100).checked_div(s.total).unwrap_or(0);
                         eprint!(
                             "\r[{:?}] {} {}%  已发现 {}  已读 {}  读错误 {}  {}s   ",
                             s.phase,

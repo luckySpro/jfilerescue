@@ -7,7 +7,9 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Phase {
+    #[default]
     Idle,
     Boot,
     Metadata,
@@ -56,12 +58,6 @@ pub struct ProgressSnapshot {
     pub read_errors: u64,
     pub paused: bool,
     pub message: String,
-}
-
-impl Default for Phase {
-    fn default() -> Self {
-        Phase::Idle
-    }
 }
 
 /// Shared between the scan thread and whoever observes it.

@@ -476,8 +476,8 @@ impl Platform for WindowsPlatform {
             let (d, _) = disk_number_of_volume(&f)?;
             return Some(format!("physdisk:{}", d));
         }
-        // Image file → disk its path is on.
-        self.disk_identity_of_path(std::path::Path::new(path))
+        // Image files are regular files: never "same disk".
+        None
     }
 
     fn busy_writers(&self, volume_path: &str) -> Vec<WriterProcess> {

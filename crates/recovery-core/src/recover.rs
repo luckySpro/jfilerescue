@@ -67,10 +67,14 @@ pub struct RecoverReport {
 }
 
 /// True when `dest_dir` lives on the same physical disk/volume as `source`.
-/// `source` is a platform device path (`\\.\PhysicalDrive1`, `\\.\D:`, `/dev/rdisk4`)
-/// or an image file path. Platform crate refines this with real volume → disk
-/// mapping; here we do what is possible portably plus a conservative check.
+/// `source` is a platform device path (`\\.\PhysicalDrive1`, `\\.\D:`, `/dev/rdisk4`).
+/// Image *files* are never "same disk": their blocks are already allocated, so
+/// writing elsewhere on that disk cannot overwrite the data being recovered.
+/// The platform crate refines device paths with real volume → disk mapping.
 pub fn same_disk(source: &str, dest_dir: &Path) -> Result<bool> {
+    if Path::new(source).is_file() {
+        return Ok(false);
+    }
     let src = source.to_ascii_lowercase();
     let dest = dest_dir
         .canonicalize()
@@ -91,34 +95,17 @@ pub fn same_disk(source: &str, dest_dir: &Path) -> Result<bool> {
     }
     #[cfg(unix)]
     {
+        // /dev/rdisk4s2 vs a destination mounted from that device.
         use std::os::unix::fs::MetadataExt;
-        // Image file on same device as dest.
-        if let (Ok(a), Ok(b)) = (std::fs::metadata(source), std::fs::metadata(&dest)) {
-            if a.dev() == b.dev()
-                && !a.file_type().is_block_device()
-                && !a.file_type().is_char_device()
+        if let (Ok(a), Ok(b)) = (std::fs::metadata(&src), std::fs::metadata(&dest)) {
+            if (a.file_type().is_block_device() || a.file_type().is_char_device())
+                && a.rdev() == b.dev()
             {
                 return Ok(true);
             }
         }
-        // /dev/rdisk4s2 vs dest mounted on that device — the platform layer resolves mounts.
     }
-    // Image file: compare roots on Windows (drive letter) as a cheap heuristic.
-    #[cfg(windows)]
-    if Path::new(source).is_file() {
-        let s = Path::new(source)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(source));
-        let s = s
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .replace("\\\\?\\", "");
-        if s.get(0..2) == dest_s.get(0..2) {
-            return Ok(true);
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = &dest_s;
+    let _ = (&src, &dest_s);
     Ok(false)
 }
 
@@ -214,10 +201,10 @@ pub fn read_file_data(
         }
     }
     if lost > 0 {
-        return Err(Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("{} 字节读取失败，已用零填充", lost),
-        )));
+        return Err(Error::Io(std::io::Error::other(format!(
+            "{} 字节读取失败，已用零填充",
+            lost
+        ))));
     }
     Ok(f.size - remaining)
 }
@@ -271,10 +258,8 @@ pub fn verify(ext: &str, head: &[u8], tail: &[u8]) -> Option<String> {
                 return Some("尾部缺少 ZIP 中央目录结束记录".into());
             }
         }
-        "gif" => {
-            if !tail.ends_with(&[0x3B]) {
-                return Some("尾部缺少 GIF 结束符".into());
-            }
+        "gif" if !tail.ends_with(&[0x3B]) => {
+            return Some("尾部缺少 GIF 结束符".into());
         }
         _ => {}
     }

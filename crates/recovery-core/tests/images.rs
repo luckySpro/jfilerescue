@@ -24,7 +24,7 @@ fn payload_jpg() -> Vec<u8> {
     let mut v = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
     v.extend_from_slice(b"JFIF\0\x01\x01\x00\x00\x01\x00\x01\x00\x00");
     v.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x02]);
-    v.extend(std::iter::repeat(0x37).take(200_000));
+    v.extend(std::iter::repeat_n(0x37, 200_000));
     v.extend_from_slice(&[0xFF, 0xD9]);
     v
 }
@@ -83,6 +83,9 @@ fn build_fat32() -> Vec<u8> {
 #[test]
 fn fat32_directory_recovery_roundtrip() {
     let img = build_fat32();
+    // Also persist the generated image so the CLI can be smoke-tested against it.
+    let gen = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fat32-gen.img");
+    let _ = std::fs::write(&gen, &img);
     let dev: Arc<dyn BlockDevice> = Arc::new(MemDevice::new(img));
     let sigs = SignatureLibrary::builtin();
     let p = Progress::new();

@@ -18,6 +18,7 @@ pub struct ActiveScan {
 pub struct ActiveRecover {
     pub progress: SharedProgress,
     pub result: Arc<Mutex<Option<Result<RecoverReport, String>>>>,
+    #[allow(dead_code)]
     pub partial: Arc<Mutex<Vec<recovery_core::recover::ItemResult>>>,
 }
 

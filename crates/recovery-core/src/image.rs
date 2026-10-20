@@ -48,14 +48,13 @@ pub fn create_image(
     let mut bad = 0u64;
     let ss = dev.sector_size() as u64;
     while off < total {
-        progress.checkpoint().map_err(|e| {
+        progress.checkpoint().inspect_err(|_e| {
             let _ = std::fs::remove_file(&tmp);
-            e
         })?;
         let len = BLOCK.min(total - off) as usize;
         let got = dev.read_lossy(off, &mut buf[..len]);
         if got < len {
-            bad += ((len - got) as u64 + ss - 1) / ss;
+            bad += ((len - got) as u64).div_ceil(ss);
             progress.add_read_error();
         }
         out.write_all(&buf[..len])?;

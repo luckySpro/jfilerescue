@@ -406,7 +406,7 @@ fn ole<D: BlockDevice + ?Sized>(dev: &D, abs: u64, probe: &[u8], max: u64) -> Re
         let Ok(fat) = dev.read_vec(abs + (fs + 1) * ss, ss as usize) else {
             break;
         };
-        for e in fat.chunks_exact(4) {
+        for e in fat.as_chunks::<4>().0 {
             if le_u32(e, 0) != 0xFFFF_FFFF {
                 used += 1;
             }
@@ -451,10 +451,7 @@ fn sevenzip(probe: &[u8], max: u64) -> Resolved {
 
 fn tar<D: BlockDevice + ?Sized>(dev: &D, abs: u64, _probe: &[u8], max: u64) -> Resolved {
     let mut pos = 0u64;
-    loop {
-        let Ok(h) = dev.read_vec(abs + pos, 512) else {
-            break;
-        };
+    while let Ok(h) = dev.read_vec(abs + pos, 512) {
         if h.iter().all(|b| *b == 0) {
             return Resolved {
                 len: Some((pos + 1024).min(max)),
@@ -467,7 +464,7 @@ fn tar<D: BlockDevice + ?Sized>(dev: &D, abs: u64, _probe: &[u8], max: u64) -> R
         let size_str = String::from_utf8_lossy(&h[124..136]);
         let size = u64::from_str_radix(size_str.trim_matches(|c: char| c == '\0' || c == ' '), 8)
             .unwrap_or(0);
-        pos += 512 + (size + 511) / 512 * 512;
+        pos += 512 + size.div_ceil(512) * 512;
         if pos >= max {
             break;
         }

@@ -81,7 +81,7 @@ struct Records {
 pub fn fletcher64(data: &[u8]) -> u64 {
     let mut s1: u64 = 0;
     let mut s2: u64 = 0;
-    for c in data.chunks_exact(4) {
+    for c in data.as_chunks::<4>().0 {
         s1 = (s1 + le_u32(c, 0) as u64) % 0xFFFF_FFFF;
         s2 = (s2 + s1) % 0xFFFF_FFFF;
     }
@@ -201,7 +201,7 @@ impl ApfsVolume {
                     continue;
                 }
                 let koid = le_u64(k, 0);
-                if koid < oid || (koid == oid) {
+                if koid <= oid {
                     chosen = Some(i);
                 }
                 if koid > oid {
@@ -529,7 +529,7 @@ impl Volume for ApfsVolume {
         }
         for list in live.extents.values() {
             for e in list {
-                let nb = (e.len + self.block - 1) / self.block;
+                let nb = e.len.div_ceil(self.block);
                 for i in 0..nb {
                     bitmap.set(e.phys + i, true);
                 }

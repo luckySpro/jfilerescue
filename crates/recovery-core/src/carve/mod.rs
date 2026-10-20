@@ -202,7 +202,7 @@ impl Carver {
             if (start_in_buf as u64) >= main_len {
                 break; // in overlap region; next chunk owns it
             }
-            if abs % self.align != 0 && sig.aligned {
+            if !abs.is_multiple_of(self.align) && sig.aligned {
                 continue;
             }
             if abs < last_end {

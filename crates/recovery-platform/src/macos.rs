@@ -403,7 +403,8 @@ impl Platform for MacPlatform {
         if path.starts_with("/dev/") {
             return Some(format!("disk:{}", parent_disk(path)));
         }
-        self.disk_identity_of_path(Path::new(path))
+        // Image files are regular files: never "same disk".
+        None
     }
 
     fn busy_writers(&self, volume_path: &str) -> Vec<WriterProcess> {

@@ -102,7 +102,7 @@ impl NtfsVolume {
         } else {
             rs as u32 * cluster_size as u32
         };
-        if record_size < 256 || record_size > 65536 {
+        if !(256..=65536).contains(&record_size) {
             return Err(Error::Corrupt("MFT 记录大小无效".into()));
         }
         let mut vol = Self {
@@ -370,14 +370,14 @@ impl NtfsVolume {
         if let Some(r) = d.resident {
             return AllocBitmap::from_raw(self.cluster_size, self.total_clusters, r);
         }
-        let need = ((self.total_clusters + 7) / 8) as usize;
+        let need = self.total_clusters.div_ceil(8) as usize;
         let mut buf = Vec::with_capacity(need);
         for r in &d.runs {
             if buf.len() >= need {
                 break;
             }
             if r.offset == u64::MAX {
-                buf.extend(std::iter::repeat(0u8).take(r.len as usize));
+                buf.extend(std::iter::repeat_n(0u8, r.len as usize));
                 continue;
             }
             match self.dev.read_vec(r.offset, r.len as usize) {
