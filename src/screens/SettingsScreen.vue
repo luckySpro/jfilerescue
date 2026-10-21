@@ -139,23 +139,43 @@ async function testSig() {
 }
 
 // ---- updater ----
+// `check()` returns a Rust-side resource that is consumed by one install attempt;
+// never cache it across clicks. Download progress + errors stay visible in the row.
+const updateProgress = ref<{ done: number; total: number | null } | null>(null);
+const updatePhase = ref<"" | "downloading" | "installing">("");
 async function checkUpdate() {
   updateState.value = "checking";
+  updateErr.value = "";
   if (!isTauri) { await new Promise((r) => setTimeout(r, 600)); updateState.value = "none"; return; }
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const u = await check();
-    if (u) { updateState.value = "available"; updateVersion.value = u.version; (window as any).__jfrUpdate = u; } else updateState.value = "none";
+    if (u) { updateState.value = "available"; updateVersion.value = u.version; await u.close().catch(() => {}); } else updateState.value = "none";
   } catch (e) { updateState.value = "error"; updateErr.value = String(e); }
 }
 async function installUpdate() {
-  const u = (window as any).__jfrUpdate;
-  if (!u) return;
+  if (!isTauri) return;
+  updateErr.value = "";
+  updateProgress.value = { done: 0, total: null };
+  updatePhase.value = "downloading";
   try {
-    await u.downloadAndInstall();
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const u = await check();
+    if (!u) { updateState.value = "none"; updatePhase.value = ""; updateProgress.value = null; return; }
+    await u.downloadAndInstall((ev) => {
+      if (ev.event === "Started") updateProgress.value = { done: 0, total: ev.data.contentLength ?? null };
+      else if (ev.event === "Progress" && updateProgress.value) updateProgress.value = { ...updateProgress.value, done: updateProgress.value.done + ev.data.chunkLength };
+      else if (ev.event === "Finished") updatePhase.value = "installing";
+    });
     const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
-  } catch (e) { notify(String(e), "error"); }
+  } catch (e) {
+    updateState.value = "error";
+    updateErr.value = String(e);
+    updatePhase.value = "";
+    updateProgress.value = null;
+    notify(String(e), "error");
+  }
 }
 </script>
 
@@ -212,10 +232,12 @@ async function installUpdate() {
     <div v-else class="card">
       <div class="setrow"><div>{{ t.cfg.version }} <span class="mono">{{ currentVersion }}</span><div class="d">
         <span v-if="updateState === 'checking'"><span class="spin"></span> {{ t.cfg.checking }}</span>
+        <span v-else-if="updatePhase === 'downloading'"><span class="spin"></span> {{ t.cfg.downloading }} {{ updateProgress ? humanBytes(updateProgress.done) + (updateProgress.total ? ' / ' + humanBytes(updateProgress.total) : '') : '' }}</span>
+        <span v-else-if="updatePhase === 'installing'"><span class="spin"></span> {{ t.cfg.installing }}</span>
         <span v-else-if="updateState === 'available'" style="color: var(--ok)">{{ t.cfg.available }}: {{ updateVersion }}</span>
         <span v-else-if="updateState === 'none'">{{ t.cfg.noUpdate }}</span>
         <span v-else-if="updateState === 'error'" style="color: var(--bad)">{{ t.cfg.updateErr }}: {{ updateErr }}</span>
-      </div></div><div class="row"><button class="btn" @click="checkUpdate" :disabled="updateState === 'checking'">{{ t.cfg.check }}</button><button v-if="updateState === 'available'" class="btn primary" @click="installUpdate">{{ t.cfg.installNow }}</button></div></div>
+      </div></div><div class="row"><button class="btn" @click="checkUpdate" :disabled="updateState === 'checking' || updatePhase !== ''">{{ t.cfg.check }}</button><button v-if="updateState === 'available' || updateState === 'error'" class="btn primary" :disabled="updatePhase !== ''" @click="installUpdate">{{ t.cfg.installNow }}</button></div></div>
       <div class="setrow"><div>{{ t.cfg.autoCheck }}<div class="d">{{ t.cfg.autoCheckDesc }}</div></div><button class="switch" :class="{ on: prefs.autoCheck }" @click="prefs.autoCheck = !prefs.autoCheck; save()" role="switch" :aria-checked="prefs.autoCheck"></button></div>
       <div class="setrow"><div>{{ t.cfg.channel }}<div class="d">{{ t.cfg.channelDesc }}</div></div><select v-model="prefs.channel" @change="save"><option value="auto">{{ t.cfg.chAuto }}</option><option value="github">{{ t.cfg.chGithub }}</option><option value="proxy">{{ t.cfg.chProxy }}</option></select></div>
     </div>

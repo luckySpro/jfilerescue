@@ -10,7 +10,8 @@
 | **真实卷集成测试（8）**：`ntfs.img` / `fat32.img` / `exfat.img`（diskpart 生成，TRIM 关闭，含一个经回收站删除并清空的文件）+ `*-trimmed.img`（TRIM 开启时生成，数据簇全零）+ FAT32 内存卷 + APFS（无镜像，跳过） | 真实文件系统 | ✅ 8/8。NTFS：6 个文件按原路径找到，`recycled.pdf` 从 `$Recycle.Bin` 还原为 `项目/2025-合同/recycled.pdf` 且 `via_recycle_bin=true`、删除时间来自 `$I`；数据 SHA256 一致；驻留文件正确。exFAT：全部 High、0% 覆盖。FAT32：8.3 名首字节丢失按 FAT 固有行为接受。TRIM 镜像：条目仍找到，全部标 Low + "可能已被 TRIM 擦除"，outcome 带汇总警告；NTFS 驻留小文件仍 High |
 | CLI 端到端（真实 NTFS 镜像）：`scan --mode directory` → `show` → `recover --all` | 真实二进制 | ✅ 6/6 恢复，`IMG_0001.jpg` SHA256 `3fdba6c3…` 与原始一致，`recycled.pdf` 以 `%PDF` 开头 |
 | clippy `-D warnings`、vue-tsc、vite build、Playwright 截图（新增风险对话框与"源盘已被写入"警告页） | 静态/构建 | ✅ |
-| 生产 NSIS 包 + updater 签名 | 最终包 | 见下方发布记录 |
+| 生产 NSIS 包 + updater 签名 | 最终包 | ✅ 本地 `JFileRescue_0.1.1_x64-setup.exe` + `.sig`；CI 产出 13 个附件（Windows NSIS/MSI×2、macOS arm64/x64 DMG + app.tar.gz）+ `latest.json`，公开后独立复验：4 个下载 URL 200、`latest.json`（官方与 GH-Proxy 镜像）4 个平台签名字段完整、`scripts/verify-sig.mjs` 密码学验证 3 个 updater 包签名有效 |
+| **真实客户端自动更新 0.1.0 → 0.1.1** | 安装/升级冒烟 | ✅ 在本机已安装的 0.1.0（`D:\Program Files\JFileRescue`）上，通过 WebView2 远程调试驱动其**自带**更新逻辑：`check()` 看到 0.1.1 → `downloadAndInstall()` 下载 221 MB → 验签 → 静默 NSIS 安装 → 自动重启；重启后注册表与二进制内容均为 0.1.1。过程中发现 0.1.0 设置页把 `check()` 返回的 Update 资源缓存到后续点击，再次检查/关闭后 rid 失效报 "The resource id … is invalid"；0.1.1 改为安装前重新 `check()`、显示下载进度与安装状态、失败时保留"下载并安装"按钮 |
 
 真实镜像测试中暴露并修复的缺陷（0.1.0 均存在）：
 1. `AllocBitmap` 对 FAT/exFAT 使用绝对簇号索引，但位图按数据区相对簇号存储 → 被释放的簇被判"已分配"，评分 Low；修正为带 `base` 偏移的位图。
