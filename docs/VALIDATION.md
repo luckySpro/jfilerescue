@@ -23,6 +23,15 @@
 | **CI（GitHub Actions，仓库 luckySpro/jfilerescue）** | 目标平台 | macOS 与 Windows runner 上 `cargo test` / `clippy -D warnings` / 前端构建全部通过（macOS 侧曾暴露 3 处仅 unix 编译的问题：`FileTypeExt` 导入、`signal` 函数指针转整数 lint、Apple 签名环境变量为空时 bundler 仍尝试导入证书；均已修复并由 CI 复验）。Windows runner 产出 NSIS + 2 个 MSI + `.sig`；macOS arm64 runner 产出 `.dmg` + `.app.tar.gz` + `.sig`（未签名/未公证，首次启动需右键打开）。Intel 构建首次使用已退役的 `macos-13` runner 永久排队，改为 `macos-15-intel` 后重跑，结果见发布记录 |
 | macOS 构建、DMG、特权助手、FileVault/TCC | 目标平台 | 构建：✅ CI 上 arm64 已出包；**真机启动、FileVault/TCC、助手**：⏳ 未执行（无 Mac，无 Developer ID） |
 
+## 发布记录 v0.1.0（2026-10-21）
+
+- 仓库 `luckySpro/jfilerescue`，Release https://github.com/luckySpro/jfilerescue/releases/tag/v0.1.0，标签 `v0.1.0` → `56debca`，工作流运行 `39519560489`：test×2、build×3（windows-latest / macos-latest arm64 / macos-15-intel）、publish 全部成功。
+- 13 个附件：Windows NSIS `x64-setup.exe` + `.sig`、MSI `zh-CN`/`en-US` + `.sig`、macOS `aarch64.dmg` / `x64.dmg`、`aarch64.app.tar.gz` / `x64.app.tar.gz` + `.sig`、`latest.json`。
+- 公开后独立复验：4 个平台下载 URL HEAD 200 且大小与附件一致；`latest.json` 经官方 `/releases/latest/download/` 与 GH-Proxy 镜像均可取到，4 个 platform 的 signature 字段为完整 minisign 签名；用 `scripts/verify-sig.mjs` 以 `tauri.conf.json` 内嵌公钥**密码学验证**已发布的 `x64-setup.exe` 与 `aarch64.app.tar.gz` 签名均有效（Ed25519，BLAKE2b 预哈希，keyid 匹配）。
+- 发布过程中修复并记录：① 首次 `latest.json` 的 signature 为 `"Not Found"`（草稿附件无公开 URL，workflow 用 browser_download_url 读 `.sig` 失败）→ 手工按公开 `.sig` 重新生成并替换该附件，workflow 已改为通过 API 读取并校验前缀；② `macos-13` runner 已退役导致 Intel 任务永久排队 → 改 `macos-15-intel`；③ Apple 证书 secret 为空时 bundler 仍尝试导入 → 仅在设置时导出 Apple 环境变量。
+- 未配置 Apple Developer ID / Windows Authenticode：macOS 包未签名未公证（首次启动需右键打开），Windows 包无发行者签名（SmartScreen 提示）。updater 私钥仅在 `~/.tauri/jfilerescue.key` 与仓库 secret，**请备份**。
+- 升级链路验证：目录与签名已验证；**真实客户端"旧版 → 新版"自动更新**需等 0.1.1 发布后用已安装的 0.1.0 验证。
+
 ## 待办（需要用户环境配合）
 
 1. **真实 NTFS/exFAT 镜像测试**：以管理员运行 `node scripts/make-test-images.mjs`，然后 `cargo test -p recovery-core --test images`。
