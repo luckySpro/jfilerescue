@@ -129,7 +129,14 @@ jobs:
             // same-named ones, so by now every asset is from the current run.
             const assets = rel.assets;
             const dl = name => `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
-            const sig = async name => { const a = assets.find(x => x.name === name + '.sig'); if (!a) return null; const r = await fetch(a.browser_download_url, { headers: { authorization: `token ${process.env.GITHUB_TOKEN || ''}` } }); return (await r.text()).trim(); };
+            // Draft assets are not reachable via browser_download_url; use the API asset endpoint (follows the redirect).
+            const sig = async name => {
+              const a = assets.find(x => x.name === name + '.sig'); if (!a) return null;
+              const r = await github.request('GET /repos/{owner}/{repo}/releases/assets/{asset_id}', { owner, repo, asset_id: a.id, headers: { accept: 'application/octet-stream' } });
+              const body = Buffer.from(r.data).toString('utf8').trim();
+              if (!body.startsWith('dW50cnVzdGVk')) throw new Error(`unexpected signature payload for ${name}: ${body.slice(0, 40)}`);
+              return body;
+            };
             const platforms = {};
             // tauri-action names macOS updater bundles `<name>_<ver>_<arch>.app.tar.gz` with arch from the target triple (aarch64 / x86_64).
             const map = [

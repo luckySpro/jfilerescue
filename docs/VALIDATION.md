@@ -20,7 +20,8 @@
 | 生产二进制启动冒烟 `target/release/jfilerescue.exe` | 真实 WebView2 | ✅ 窗口标题 `JFileRescue`，WebView2 进程启动，8 s 后仍存活，正常结束 |
 | updater 签名 | 最终包 | ✅ 密钥对在 `~/.tauri/jfilerescue.key`（仓库外，**请备份**），公钥已写入 `tauri.conf.json`，`.sig` 已生成 |
 | 真实安装 / 真实磁盘业务验收 | 安装冒烟 / 真实业务 | ⏳ **未执行**（需管理员权限与真实删除场景；见待办） |
-| macOS 构建、DMG、特权助手、FileVault/TCC | 目标平台 | ⏳ **未执行**（本机无 macOS）。源码按 cfg 分离并通过 Windows 侧编译检查；macOS 路径未经编译 |
+| **CI（GitHub Actions，仓库 luckySpro/jfilerescue）** | 目标平台 | macOS 与 Windows runner 上 `cargo test` / `clippy -D warnings` / 前端构建全部通过（macOS 侧曾暴露 3 处仅 unix 编译的问题：`FileTypeExt` 导入、`signal` 函数指针转整数 lint、Apple 签名环境变量为空时 bundler 仍尝试导入证书；均已修复并由 CI 复验）。Windows runner 产出 NSIS + 2 个 MSI + `.sig`；macOS arm64 runner 产出 `.dmg` + `.app.tar.gz` + `.sig`（未签名/未公证，首次启动需右键打开）。Intel 构建首次使用已退役的 `macos-13` runner 永久排队，改为 `macos-15-intel` 后重跑，结果见发布记录 |
+| macOS 构建、DMG、特权助手、FileVault/TCC | 目标平台 | 构建：✅ CI 上 arm64 已出包；**真机启动、FileVault/TCC、助手**：⏳ 未执行（无 Mac，无 Developer ID） |
 
 ## 待办（需要用户环境配合）
 
