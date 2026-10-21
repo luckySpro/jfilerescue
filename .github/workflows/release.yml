@@ -46,7 +46,7 @@ jobs:
           - os: macos-latest
             args: "--bundles app,dmg --target aarch64-apple-darwin"
             target: aarch64-apple-darwin
-          - os: macos-13
+          - os: macos-15-intel   # macos-13 was retired Dec 2025; this is the last Intel image (until Aug 2027)
             args: "--bundles app,dmg --target x86_64-apple-darwin"
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
@@ -124,7 +124,9 @@ jobs:
             const { owner, repo } = context.repo;
             const rels = await github.paginate(github.rest.repos.listReleases, { owner, repo });
             const rel = rels.find(r => r.draft && (r.tag_name === tag || r.name?.endsWith(tag.replace(/^v/, ''))));
-            if (!rel) core.setFailed(`draft release for ${tag} not found`);
+            if (!rel) { core.setFailed(`draft release for ${tag} not found`); return; }
+            // Assets from an earlier failed attempt can linger on a re-used draft; tauri-action replaces
+            // same-named ones, so by now every asset is from the current run.
             const assets = rel.assets;
             const dl = name => `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
             const sig = async name => { const a = assets.find(x => x.name === name + '.sig'); if (!a) return null; const r = await fetch(a.browser_download_url, { headers: { authorization: `token ${process.env.GITHUB_TOKEN || ''}` } }); return (await r.text()).trim(); };
