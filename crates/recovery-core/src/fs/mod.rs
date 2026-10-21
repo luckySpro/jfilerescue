@@ -11,36 +11,58 @@ use crate::progress::SharedProgress;
 use crate::Result;
 
 /// Allocation state of a volume, cluster granular. `1` = allocated.
+/// Allocation state of a volume, cluster granular. `1` = allocated.
+///
+/// Bit `i` describes the cluster whose first byte is `base + i * cluster_size`.
+/// NTFS/APFS number clusters from the volume start (`base = 0`); FAT/exFAT
+/// number them from the data area starting at cluster 2 (`base = data_offset`).
 #[derive(Debug, Clone)]
 pub struct AllocBitmap {
     pub cluster_size: u64,
     pub clusters: u64,
+    pub base: u64,
     bits: Vec<u8>,
 }
 
 impl AllocBitmap {
     pub fn new(cluster_size: u64, clusters: u64) -> Self {
+        Self::new_at(cluster_size, clusters, 0)
+    }
+    pub fn new_at(cluster_size: u64, clusters: u64, base: u64) -> Self {
         Self {
             cluster_size,
             clusters,
+            base,
             bits: vec![0u8; clusters.div_ceil(8) as usize],
         }
     }
     pub fn all_allocated(cluster_size: u64, clusters: u64) -> Self {
+        Self::all_allocated_at(cluster_size, clusters, 0)
+    }
+    pub fn all_allocated_at(cluster_size: u64, clusters: u64, base: u64) -> Self {
         Self {
             cluster_size,
             clusters,
+            base,
             bits: vec![0xFF; clusters.div_ceil(8) as usize],
         }
     }
     pub fn from_raw(cluster_size: u64, clusters: u64, raw: Vec<u8>) -> Self {
+        Self::from_raw_at(cluster_size, clusters, raw, 0)
+    }
+    pub fn from_raw_at(cluster_size: u64, clusters: u64, raw: Vec<u8>, base: u64) -> Self {
         let mut bits = raw;
         bits.resize(clusters.div_ceil(8) as usize, 0xFF);
         Self {
             cluster_size,
             clusters,
+            base,
             bits,
         }
+    }
+    /// Cluster index for a byte offset; `None` when the offset lies before `base`.
+    fn index_of(&self, offset: u64) -> Option<u64> {
+        offset.checked_sub(self.base).map(|o| o / self.cluster_size)
     }
     pub fn set(&mut self, c: u64, allocated: bool) {
         if c >= self.clusters {
@@ -70,8 +92,13 @@ impl AllocBitmap {
         let mut total = 0u64;
         let mut alloc = 0u64;
         for e in extents {
-            let first = e.offset / self.cluster_size;
-            let last = (e.offset + e.len.max(1) - 1) / self.cluster_size;
+            let end = e.offset + e.len.max(1) - 1;
+            let (Some(first), Some(last)) = (self.index_of(e.offset), self.index_of(end)) else {
+                // Before the data area (FAT/boot region): never a data cluster → count as allocated.
+                total += 1;
+                alloc += 1;
+                continue;
+            };
             for c in first..=last {
                 total += 1;
                 if self.is_allocated(c) {
@@ -91,7 +118,7 @@ impl AllocBitmap {
                 (None, true) => start = Some(c),
                 (Some(s), false) => {
                     out.push(crate::model::Extent {
-                        offset: s * self.cluster_size,
+                        offset: self.base + s * self.cluster_size,
                         len: (c - s) * self.cluster_size,
                     });
                     start = None;

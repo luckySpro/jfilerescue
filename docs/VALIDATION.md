@@ -1,5 +1,25 @@
 # JFileRescue 验证记录
 
+## 0.1.1（2026-10-21）
+
+起因：用户在 `C:\Users\Administrator\Desktop\testjfile` 删除文件后用 0.1.0 找回为 0。根因分析见 git 提交说明与本节；三项根因均已修复并以真实卷复验。
+
+| 项 | 等级 | 结果 |
+| --- | --- | --- |
+| Rust 单元测试（24，新增 `$I` 记录 v1/v2 解析、`$R`/`$I` 配对、回收站目录识别） | 单元 | ✅ |
+| **真实卷集成测试（8）**：`ntfs.img` / `fat32.img` / `exfat.img`（diskpart 生成，TRIM 关闭，含一个经回收站删除并清空的文件）+ `*-trimmed.img`（TRIM 开启时生成，数据簇全零）+ FAT32 内存卷 + APFS（无镜像，跳过） | 真实文件系统 | ✅ 8/8。NTFS：6 个文件按原路径找到，`recycled.pdf` 从 `$Recycle.Bin` 还原为 `项目/2025-合同/recycled.pdf` 且 `via_recycle_bin=true`、删除时间来自 `$I`；数据 SHA256 一致；驻留文件正确。exFAT：全部 High、0% 覆盖。FAT32：8.3 名首字节丢失按 FAT 固有行为接受。TRIM 镜像：条目仍找到，全部标 Low + "可能已被 TRIM 擦除"，outcome 带汇总警告；NTFS 驻留小文件仍 High |
+| CLI 端到端（真实 NTFS 镜像）：`scan --mode directory` → `show` → `recover --all` | 真实二进制 | ✅ 6/6 恢复，`IMG_0001.jpg` SHA256 `3fdba6c3…` 与原始一致，`recycled.pdf` 以 `%PDF` 开头 |
+| clippy `-D warnings`、vue-tsc、vite build、Playwright 截图（新增风险对话框与"源盘已被写入"警告页） | 静态/构建 | ✅ |
+| 生产 NSIS 包 + updater 签名 | 最终包 | 见下方发布记录 |
+
+真实镜像测试中暴露并修复的缺陷（0.1.0 均存在）：
+1. `AllocBitmap` 对 FAT/exFAT 使用绝对簇号索引，但位图按数据区相对簇号存储 → 被释放的簇被判"已分配"，评分 Low；修正为带 `base` 偏移的位图。
+2. CLI `recover` 用整盘设备读取卷相对 extents → 带分区表的镜像恢复出错误字节；改为按卷切片。
+3. NTFS 非驻留属性长度不足 64 字节时越界 panic；空属性 `last_vcn = -1` 加一溢出。
+4. 测试镜像生成脚本本身的两个坑（记录以免再犯）：Windows 对 VHD 发 TRIM，被删簇立即清零，需 `fsutil behavior set DisableDeleteNotify 1`；写入后立刻删除的文件数据未落盘，需先 `fsync`。
+
+## 0.1.0（2026-10-20）
+
 版本 0.1.0 · 提交见 `git log` · 记录日期 2026-10-20 · 机器：Windows 11 Pro 10.0.26200 x64，Rust 1.99.1 (stable-msvc)，Node 24.20，pnpm 9.15.4，VS 2022 Build Tools 14.44，WebView2 155。
 
 ## 证据等级总览

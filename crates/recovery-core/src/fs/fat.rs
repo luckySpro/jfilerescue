@@ -292,7 +292,8 @@ impl FatVolume {
     }
 
     fn build_bitmap(&self, fat: &[u8]) -> AllocBitmap {
-        let mut bm = AllocBitmap::new(self.cluster_size, self.total_clusters);
+        // Bit i ↔ cluster i+2 ↔ byte offset data_offset + i * cluster_size.
+        let mut bm = AllocBitmap::new_at(self.cluster_size, self.total_clusters, self.data_offset);
         for c in 0..self.total_clusters {
             let v = self.fat_entry(fat, c as u32 + 2);
             bm.set(c, v != 0);
@@ -474,6 +475,7 @@ impl Volume for FatVolume {
                     extents,
                     resident: None,
                     name_damaged: e.damaged,
+                    via_recycle_bin: false,
                     note,
                 });
                 id += 1;
@@ -701,9 +703,18 @@ impl Volume for ExFatVolume {
                     .dev
                     .read_vec(self.cluster_offset(c), len.min(64 << 20) as usize)
                     .unwrap_or_default();
-                AllocBitmap::from_raw(self.cluster_size, self.total_clusters, raw)
+                AllocBitmap::from_raw_at(
+                    self.cluster_size,
+                    self.total_clusters,
+                    raw,
+                    self.heap_offset,
+                )
             }
-            None => AllocBitmap::all_allocated(self.cluster_size, self.total_clusters),
+            None => AllocBitmap::all_allocated_at(
+                self.cluster_size,
+                self.total_clusters,
+                self.heap_offset,
+            ),
         };
 
         let mut queue: Vec<(String, u32, bool, u64, bool)> =
@@ -848,6 +859,7 @@ impl Volume for ExFatVolume {
                     extents,
                     resident: None,
                     name_damaged: e.damaged,
+                    via_recycle_bin: false,
                     note,
                 });
                 id += 1;

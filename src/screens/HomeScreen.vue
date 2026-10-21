@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { api, pickDirectory, pickFile, pickSavePath, type DiskEntry, type VolumeEntry } from "../api";
+import { api, pickDirectory, pickFile, pickSavePath, type DiskEntry, type SourceRisk, type VolumeEntry } from "../api";
 import { dict } from "../i18n";
 import { disks, disksLoading, go, humanBytes, notify, privilege, setup } from "../store";
 
@@ -83,6 +83,15 @@ const warning = computed(() => {
   return null;
 });
 
+/** Pre-scan risk dialog: the app's own store / data / exe is on the source disk. */
+const risk = ref<SourceRisk | null>(null);
+async function changeStore() {
+  const p = await pickDirectory(t.value.risk.storeLabel);
+  if (!p) return;
+  try { await api.setStoreRoot(p); notify(t.value.risk.storeChanged, "ok"); risk.value = null; } catch (e) { notify(String(e), "error"); }
+}
+function proceedAnyway() { const r = risk.value; risk.value = { ...r!, store_on_source: false, app_data_on_source: false, exe_on_source: false }; start(); }
+
 function capText(d: DiskEntry, v: VolumeEntry | null) {
   if (v) return v.fs === "unknown" ? t.value.source.carveOnly : t.value.source.metaCarve;
   return d.capabilities.includes("metadata") ? t.value.source.metaCarve : t.value.source.carveOnly;
@@ -92,6 +101,14 @@ async function start() {
   if (setup.mode === "directory" && !setup.directory.trim()) return notify(t.value.settings.needDir, "error");
   if (setup.mode === "directory" && inferred.value && !setup.source) selectVolume(inferred.value.d, inferred.value.v);
   if (!setup.source) return notify(setup.mode === "directory" ? t.value.source.notInferred : t.value.settings.needSource, "error");
+  // Before touching the source: does the app itself write to that disk?
+  if (!risk.value && !setup.source.disk.path.match(/\.(img|dd|raw|bin|iso|dmg)$/i)) {
+    try {
+      const r = await api.sourceRisk(setup.source.path);
+      if (r.store_on_source || r.app_data_on_source || r.exe_on_source) { risk.value = r; return; }
+    } catch { /* fall through */ }
+  }
+  risk.value = null;
   starting.value = true;
   try {
     let source = setup.source.path;
@@ -213,6 +230,24 @@ async function start() {
         </div>
         <button class="btn primary lg" style="width: 100%; justify-content: center" :disabled="starting || (setup.mode === 'directory' ? !setup.directory.trim() || (!inferred && !setup.source) : !setup.source)" @click="start"><span v-if="starting" class="spin"></span>▶ {{ t.settings.start }}</button>
         <p class="small muted mt-s">{{ t.settings.estimate }}</p>
+        <div class="notice warn mt-s"><span>⚠</span><span>{{ t.risk.stopWriting }}</span></div>
+      </div>
+    </div>
+
+    <div v-if="risk" class="modal-bg" @click.self="risk = null" @keydown.esc="risk = null">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="hd">{{ t.risk.title }}</div>
+        <div class="bd">
+          <div v-if="risk.store_on_source" class="notice bad" style="margin-bottom: 10px"><span>⛔</span><span>{{ t.risk.storeOnSource }}<div class="mono small mt-s">{{ risk.store_root }}</div></span></div>
+          <div v-if="risk.app_data_on_source" class="notice warn" style="margin-bottom: 10px"><span>⚠</span><span>{{ t.risk.appDataOnSource }}</span></div>
+          <div v-if="risk.exe_on_source" class="notice warn" style="margin-bottom: 10px"><span>⚠</span><span>{{ t.risk.exeOnSource }}</span></div>
+          <div class="notice info"><span>ⓘ</span><span>{{ t.risk.stopWriting }}</span></div>
+        </div>
+        <div class="ft">
+          <button class="btn" @click="risk = null">{{ t.common.cancel }}</button>
+          <button v-if="risk.store_on_source" class="btn primary" @click="changeStore">{{ t.risk.changeStore }}</button>
+          <button class="btn" :class="{ primary: !risk.store_on_source }" @click="proceedAnyway">{{ t.risk.proceed }}</button>
+        </div>
       </div>
     </div>
   </section>

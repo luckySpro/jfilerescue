@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "jfilerescue"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "env_logger",
@@ -3057,7 +3057,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "recovery-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "dirs 5.0.1",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "recovery-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aho-corasick",
  "base64 0.22.1",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "recovery-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "log",

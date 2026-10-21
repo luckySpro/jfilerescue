@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { api, confirmDialog, isTauri, openPath, pickFile, pickSavePath, type LengthRule, type Signature } from "../api";
+import { api, confirmDialog, isTauri, openPath, pickDirectory, pickFile, pickSavePath, type LengthRule, type Signature, type StoreInfo } from "../api";
 import { dict, fmt, locale, setLocale, type Locale } from "../i18n";
 import { humanBytes, notify, theme } from "../store";
 
 const t = dict;
 const tab = ref<"general" | "sigs" | "perf" | "update">("general");
 const dataDir = ref("");
+const store = ref<StoreInfo | null>(null);
+async function loadStore() { try { store.value = await api.storeInfo(); } catch { /* ignore */ } }
+async function changeStore() {
+  const p = await pickDirectory(t.value.risk.storeLabel);
+  if (!p) return;
+  try { store.value = await api.setStoreRoot(p); notify(t.value.risk.storeChanged, "ok"); } catch (e) { notify(String(e), "error"); }
+}
+async function resetStore() {
+  if (!store.value) return;
+  try { store.value = await api.setStoreRoot(store.value.default_root); notify(t.value.risk.storeChanged, "ok"); } catch (e) { notify(String(e), "error"); }
+}
 const sigs = ref<Signature[]>([]);
 const sigQuery = ref("");
 const editing = ref<Signature | null>(null);
@@ -41,6 +52,7 @@ function save() {
 async function loadSigs() { try { sigs.value = await api.listSignatures(); } catch (e) { notify(String(e), "error"); } }
 onMounted(async () => {
   try { dataDir.value = await api.dataDir(); } catch { /* ignore */ }
+  await loadStore();
   try { const d = (await api.diagnostics()) as { app_version?: string }; if (d.app_version) currentVersion.value = d.app_version; } catch { /* ignore */ }
   await loadSigs();
 });
@@ -161,6 +173,7 @@ async function installUpdate() {
       <div class="setrow"><div>{{ t.cfg.lang }}</div><select :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)"><option value="system">{{ t.top.system }}</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="en">English</option><option value="ja">日本語</option></select></div>
       <div class="setrow"><div>{{ t.cfg.theme }}</div><select v-model="theme"><option value="system">{{ t.top.system }}</option><option value="light">{{ t.top.light }}</option><option value="dark">{{ t.top.dark }}</option></select></div>
       <div class="setrow"><div>{{ t.cfg.dataDir }}<div class="d mono">{{ dataDir }}</div></div><button class="btn" @click="openPath(dataDir)">{{ t.cfg.openDir }}</button></div>
+      <div class="setrow"><div>{{ t.risk.storeLabel }}<div class="d">{{ t.risk.storeDesc }}</div><div class="d mono">{{ store?.root }}</div><div v-if="store && store.memory_sessions" class="chip warn mt-s"><span class="dot"></span>{{ t.risk.memoryOnly }} × {{ store.memory_sessions }}</div></div><div class="row"><button class="btn" @click="changeStore">{{ t.risk.changeStore }}</button><button class="btn" v-if="store && store.root !== store.default_root" @click="resetStore">{{ t.risk.storeDefault }}</button></div></div>
       <div class="setrow"><div>{{ t.cfg.onClose }}<div class="d">{{ t.cfg.onCloseDesc }}</div></div><select v-model="prefs.onClose" @change="save"><option value="tray">{{ t.cfg.tray }}</option><option value="ask">{{ t.cfg.ask }}</option><option value="quit">{{ t.cfg.quit }}</option></select></div>
     </div>
 

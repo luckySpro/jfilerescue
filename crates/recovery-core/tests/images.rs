@@ -208,32 +208,54 @@ fn check_host_image(name: &str, expect_fs: &str) {
     };
     let out = run_scan(Arc::clone(&dev), None, &req, &sigs, &Progress::new()).unwrap();
     assert_eq!(out.fs.label(), expect_fs, "warning: {:?}", out.warning);
+    // diskpart images carry an MBR: extents are relative to the scanned volume.
+    let vol = recovery_core::device::SliceDevice::new(
+        Arc::clone(&dev),
+        out.volume_offset,
+        out.volume_len,
+        "vol",
+    )
+    .unwrap();
     let names: Vec<String> = out.files.iter().map(|f| f.full_path()).collect();
+    // FAT 8.3 entries lose their first byte on delete (0xE5); when no LFN was
+    // stored (8.3-compatible names) the scanner reports `_MG_0001.jpg`. That loss
+    // is inherent to FAT, so accept it there.
+    let find = |want: &str| -> Option<&recovery_core::model::FoundFile> {
+        out.files.iter().find(|f| {
+            let fp = f.full_path();
+            if fp.eq_ignore_ascii_case(want) {
+                return true;
+            }
+            if expect_fs != "FAT32" {
+                return false;
+            }
+            let (wd, wn) = want.rsplit_once('/').unwrap_or(("", want));
+            let fd = f.dir.as_deref().unwrap_or("");
+            fd.eq_ignore_ascii_case(wd)
+                && f.name.starts_with('_')
+                && f.name
+                    .chars()
+                    .skip(1)
+                    .collect::<String>()
+                    .eq_ignore_ascii_case(&wn.chars().skip(1).collect::<String>())
+        })
+    };
     for want in [
         "项目/2025-合同/合同-华东区-2025Q2.docx",
         "项目/2025-合同/附件/报价单-v3.xlsx",
         "项目/2025-合同/现场照片/IMG_0001.jpg",
         "项目/2025-合同/签字页.pdf",
     ] {
-        assert!(
-            names.iter().any(|n| n.eq_ignore_ascii_case(want)),
-            "{} missing in {:?}",
-            want,
-            names
-        );
+        assert!(find(want).is_some(), "{} missing in {:?}", want, names);
     }
     assert!(
         !names.iter().any(|n| n.contains("gone.txt")),
         "directory filter leaked: {:?}",
         names
     );
-    let jpg = out
-        .files
-        .iter()
-        .find(|f| f.name.eq_ignore_ascii_case("IMG_0001.jpg"))
-        .unwrap();
+    let jpg = find("项目/2025-合同/现场照片/IMG_0001.jpg").unwrap();
     let mut got = vec![];
-    read_file_data(dev.as_ref(), jpg, |c| {
+    read_file_data(&vol, jpg, |c| {
         got.extend_from_slice(c);
         Ok(())
     })
@@ -246,6 +268,14 @@ fn check_host_image(name: &str, expect_fs: &str) {
         jpg.quality,
         jpg.note
     );
+    assert!(
+        jpg.quality >= Quality::Medium && jpg.overwritten_pct == 0,
+        "{}: freed clusters must read as free: {:?} {}% {}",
+        name,
+        jpg.quality,
+        jpg.overwritten_pct,
+        jpg.note
+    );
     if expect_fs == "NTFS" {
         let small = out
             .files
@@ -253,8 +283,49 @@ fn check_host_image(name: &str, expect_fs: &str) {
             .find(|f| f.name == "small.txt")
             .expect("resident file");
         assert!(small.resident.is_some(), "small.txt should be resident");
+        // Deleted via the Recycle Bin: must be reported under its ORIGINAL path,
+        // flagged, with the real deletion time from the $I record; neither the
+        // `$I` record nor a raw `$Recycle.Bin/...` path may leak into the list.
+        let rec = out
+            .files
+            .iter()
+            .find(|f| f.name == "recycled.pdf")
+            .unwrap_or_else(|| {
+                panic!(
+                    "recycle-bin file not resolved to its original name: {:?}",
+                    names
+                )
+            });
+        assert!(rec.via_recycle_bin, "{:?}", rec.note);
+        assert_eq!(rec.dir.as_deref(), Some("项目/2025-合同"));
+        assert!(
+            rec.deleted_at.map(|t| t > 1_700_000_000).unwrap_or(false),
+            "deleted_at from $I: {:?}",
+            rec.deleted_at
+        );
+        assert!(
+            !names.iter().any(|n| n.contains("$I")),
+            "$I records listed: {:?}",
+            names
+        );
+        assert!(
+            !names.iter().any(|n| n.starts_with("$Recycle.Bin")),
+            "raw $R paths listed: {:?}",
+            names
+        );
         let mut got = vec![];
-        read_file_data(dev.as_ref(), small, |c| {
+        read_file_data(&vol, rec, |c| {
+            got.extend_from_slice(c);
+            Ok(())
+        })
+        .unwrap();
+        assert!(
+            got.starts_with(b"%PDF-1.4"),
+            "recycled.pdf data: {:?}",
+            &got[..8.min(got.len())]
+        );
+        let mut got = vec![];
+        read_file_data(&vol, small, |c| {
             got.extend_from_slice(c);
             Ok(())
         })
@@ -268,8 +339,11 @@ fn check_host_image(name: &str, expect_fs: &str) {
         ..Default::default()
     };
     let out = run_scan(dev, None, &req, &sigs, &Progress::new()).unwrap();
+    // FAT 8.3 entries lose their first byte on delete → `_one.txt`.
     assert!(
-        out.files.iter().any(|f| f.name == "gone.txt"),
+        out.files
+            .iter()
+            .any(|f| f.name == "gone.txt" || (expect_fs == "FAT32" && f.name == "_one.txt")),
         "{:?}",
         out.files.iter().map(|f| f.full_path()).collect::<Vec<_>>()
     );
@@ -290,4 +364,71 @@ fn exfat_host_image() {
 #[test]
 fn apfs_host_image() {
     check_host_image("apfs.img", "APFS");
+}
+
+/// Images built while Windows TRIM was active: the metadata survives but every
+/// freed cluster was zero-filled by the VHD driver. The scanner must still find
+/// the entries, but report them as erased instead of "High".
+fn check_trimmed_image(name: &str, expect_fs: &str) {
+    let Some(p) = host_image(name) else { return };
+    let dev: Arc<dyn BlockDevice> = Arc::new(FileDevice::open(&p).unwrap());
+    let req = ScanRequest {
+        mode: ScanMode::Full,
+        depth: ScanDepth::Quick,
+        ..Default::default()
+    };
+    let out = run_scan(
+        dev,
+        None,
+        &req,
+        &SignatureLibrary::builtin(),
+        &Progress::new(),
+    )
+    .unwrap();
+    assert_eq!(out.fs.label(), expect_fs);
+    let jpg = out
+        .files
+        .iter()
+        .find(|f| f.name.to_lowercase().ends_with("mg_0001.jpg"))
+        .unwrap_or_else(|| {
+            panic!(
+                "IMG_0001.jpg not found in {:?}",
+                out.files.iter().map(|f| f.full_path()).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(jpg.quality, Quality::Low, "{}", jpg.note);
+    assert!(
+        jpg.note.contains("擦除"),
+        "note should explain TRIM: {}",
+        jpg.note
+    );
+    let w = out.warning.clone().unwrap_or_default();
+    assert!(
+        w.contains("擦除"),
+        "outcome warning should mention erasure: {:?}",
+        out.warning
+    );
+    // Resident NTFS data lives in the MFT and survives TRIM.
+    if expect_fs == "NTFS" {
+        let small = out
+            .files
+            .iter()
+            .find(|f| f.name == "small.txt")
+            .expect("small.txt");
+        assert!(small.resident.is_some());
+        assert_eq!(small.quality, Quality::High);
+    }
+}
+
+#[test]
+fn ntfs_trimmed_image() {
+    check_trimmed_image("ntfs-trimmed.img", "NTFS");
+}
+#[test]
+fn fat32_trimmed_image() {
+    check_trimmed_image("fat32-trimmed.img", "FAT32");
+}
+#[test]
+fn exfat_trimmed_image() {
+    check_trimmed_image("exfat-trimmed.img", "exFAT");
 }

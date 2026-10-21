@@ -9,6 +9,19 @@ use tauri::Manager;
 
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // WebView2 writes a profile (cache, GPU shader cache, …) continuously. By
+    // default it lands on the system drive — the very disk users most often need
+    // to recover from. If the user moved the results store elsewhere, keep the
+    // WebView profile next to it so the app stops touching the source disk.
+    #[cfg(windows)]
+    if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_none() {
+        if let Some(root) = state::persisted_store_root() {
+            let profile = root.join("webview");
+            if std::fs::create_dir_all(&profile).is_ok() {
+                std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &profile);
+            }
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -27,12 +40,16 @@ pub fn run() {
             commands::busy_writers,
             commands::relaunch_elevated,
             commands::open_privacy_settings,
+            commands::source_risk,
             commands::start_scan,
             commands::scan_progress,
             commands::pause_scan,
             commands::cancel_scan,
             commands::list_sessions,
             commands::load_session,
+            commands::store_info,
+            commands::set_store_root,
+            commands::save_memory_session,
             commands::query_session,
             commands::session_tree,
             commands::session_types,

@@ -29,6 +29,7 @@ async function openPrivacy() { try { await api.openPrivacySettings(); } catch (e
   <section>
     <h1>{{ t.perm.title }}</h1>
     <p class="sub">{{ t.perm.sub }}</p>
+    <div class="notice bad" style="margin-bottom: 14px"><span>⛔</span><span><b>{{ t.risk.stopWriting }}</b></span></div>
 
     <div v-if="!isMac" class="steps">
       <div class="wstep" :class="elevated ? 'done' : 'bad'"><div class="n">{{ elevated ? '✓' : '!' }}</div><div><b>{{ t.perm.win.admin }}</b><div class="small muted">{{ elevated ? t.perm.win.adminOk : t.perm.win.adminNo }}</div></div><button v-if="!elevated" class="btn primary" @click="relaunch">{{ t.perm.win.relaunch }}</button></div>

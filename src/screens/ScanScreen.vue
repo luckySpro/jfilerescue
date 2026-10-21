@@ -138,6 +138,7 @@ async function viewResults() {
           <button class="btn" @click="go('home')">{{ t.results.rescan }}</button>
           <span v-if="status?.error" class="chip bad"><span class="dot"></span>{{ status.error }}</span>
         </template>
+        <span v-if="status?.memory_only" class="chip warn"><span class="dot"></span>{{ t.risk.memoryOnly }}</span>
       </div>
     </div>
     <div class="grid-2 mt">

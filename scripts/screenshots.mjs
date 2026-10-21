@@ -12,8 +12,10 @@ const browser = await chromium.launch();
 const nav = (p, s) => p.click(`button.nav[data-s="${s}"]`);
 const shots = [
   ["home", async (p) => { await p.fill("input[type=text] >> nth=0", "D:\\项目\\2025-合同"); await p.waitForTimeout(300); }],
+  ["home-risk-dialog", async (p) => { await p.fill("input[type=text] >> nth=0", "C:\\Users\\me\\Desktop\\testjfile"); await p.waitForTimeout(300); await p.click("text=开始扫描"); await p.waitForTimeout(600); }],
   ["scan", async (p) => { await p.fill("input[type=text] >> nth=0", "D:\\项目\\2025-合同"); await p.waitForTimeout(300); await p.click("text=开始扫描"); await p.waitForTimeout(9000); }],
   ["results", async (p) => { await nav(p, "sessions"); await p.click("table >> text=打开"); await p.waitForTimeout(800); await p.click("tbody tr >> nth=0"); await p.waitForTimeout(500); }],
+  ["results-nowrite-warning", async (p) => { await nav(p, "sessions"); await p.click("table >> text=打开 >> nth=2"); await p.waitForTimeout(800); }],
   ["recover", async (p) => { await nav(p, "sessions"); await p.click("table >> text=打开"); await p.waitForTimeout(800); await p.click("text=恢复所选文件"); await p.fill("input[type=text]", "E:\\恢复"); await p.waitForTimeout(600); await p.click("text=开始恢复"); await p.waitForTimeout(4000); }],
   ["sessions", async (p) => { await nav(p, "sessions"); await p.waitForTimeout(400); }],
   ["signatures", async (p) => { await nav(p, "settings"); await p.click("button.tab >> text=签名库"); await p.waitForTimeout(400); }],

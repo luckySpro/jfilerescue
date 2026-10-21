@@ -4,7 +4,9 @@ use crate::carve::signatures::SignatureLibrary;
 use crate::carve::Carver;
 use crate::device::{BlockDevice, SliceDevice};
 use crate::fs::{open_volume, AllocBitmap};
-use crate::model::{Extent, FoundFile, FsKind, ScanDepth, ScanMode, ScanRequest, Summary};
+use crate::model::{
+    Extent, FoundFile, FsKind, Quality, ScanDepth, ScanMode, ScanRequest, Source, Summary,
+};
 use crate::partition::read_partitions;
 use crate::progress::{Phase, SharedProgress};
 use crate::{Error, Result};
@@ -121,13 +123,56 @@ pub fn run_scan(
         files.extend(carved);
     }
 
-    progress.set_phase(Phase::Finalize, 1);
+    // Zero probe: a deleted file whose first data sector reads as all zeros has
+    // almost certainly been TRIM'd / unmapped (SSD, thin storage, VHD). Its name
+    // and size survive in the metadata, the bytes do not. Report it as Low with an
+    // explicit reason instead of a misleading "High", and warn when it is the norm.
+    progress.set_phase(Phase::Finalize, files.len() as u64);
+    progress.set_message("检查数据簇是否已被擦除");
+    const PROBE: usize = 512;
+    let mut buf = [0u8; PROBE];
+    let mut probed = 0u64;
+    let mut erased = 0u64;
+    for (i, f) in files.iter_mut().enumerate() {
+        if i % 512 == 0 {
+            progress.checkpoint()?;
+            progress.set_done(i as u64);
+        }
+        if f.source != Source::Metadata || f.resident.is_some() || f.size == 0 {
+            continue;
+        }
+        let Some(e) = f.extents.first() else { continue };
+        let n = PROBE.min(e.len as usize).min(f.size as usize);
+        if n == 0 || e.offset + n as u64 > vol_dev.size() {
+            continue;
+        }
+        if vol_dev.read_at(e.offset, &mut buf[..n]).is_err() {
+            continue;
+        }
+        probed += 1;
+        if buf[..n].iter().all(|b| *b == 0) {
+            erased += 1;
+            f.quality = Quality::Low;
+            f.note = format!("数据簇内容为全零，可能已被 TRIM 擦除；{}", f.note);
+        }
+    }
+    if probed > 0 && erased * 2 >= probed {
+        let w = format!(
+            "{} / {} 个已删除文件的数据簇已被擦除（SSD/TRIM 或精简置备存储）：文件名和大小仍在，内容不可恢复",
+            erased, probed
+        );
+        warning = Some(match warning {
+            Some(prev) => format!("{}；{}", prev, w),
+            None => w,
+        });
+    }
+
     progress.set_message("整理结果");
     let mut summary = Summary::default();
     for f in &files {
         summary.add(f);
     }
-    progress.set_done(1);
+    progress.set_done(files.len() as u64);
     progress.set_phase(Phase::Done, 1);
     Ok(ScanOutcome {
         fs,

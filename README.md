@@ -5,7 +5,9 @@
 - **指定目录找回** — 通过文件系统元数据（NTFS MFT、FAT/exFAT 目录项、APFS 文件系统树残留节点）找回某个文件夹下被删除的文件，保留原文件名与目录结构。
 - **全盘找回** — 元数据 + 按文件签名逐扇区雕刻未分配空间，可找回格式化、分区表损坏后的文件（雕刻结果无原文件名）。
 
-源磁盘永远只读打开；恢复目标与源在同一磁盘时在 Rust 端拒绝写入。
+源磁盘永远只读打开；恢复目标与源在同一磁盘时在 Rust 端拒绝写入。**程序自身也不向源磁盘写入**：结果存储位置与源盘相同时结果只留在内存，可在设置中把存储位置（含 WebView 缓存）改到另一块磁盘。
+
+> 删除文件后请立即停止向该磁盘写入：不要在该磁盘上安装或运行本程序。系统盘（SSD + TRIM）上被删除的数据通常在数秒内被固件擦除。
 
 > M&J Group · 473276@qq.com · MIT OR Apache-2.0
 
@@ -33,7 +35,7 @@ helper/macos              macOS 特权助手（SMAppService，只读打开 /dev/
 
 | 文件系统 | 指定目录 | 全盘·元数据 | 全盘·雕刻 |
 | --- | --- | --- | --- |
-| NTFS | ✅ | ✅ | ✅ |
+| NTFS | ✅（含经回收站删除：按 `$I` 记录还原原路径） | ✅ | ✅ |
 | FAT12/16/32、exFAT | ✅ | ✅ | ✅ |
 | APFS 未加密 | ✅ | ✅ | ✅ |
 | APFS FileVault | ⚠ 密文，不可用 | ⚠ | ❌ |
@@ -55,7 +57,7 @@ pnpm icons                     # 从 public/icon.svg 重新生成全部图标
 pnpm screenshots               # Playwright 截图到 docs/screenshots/
 ```
 
-真实文件系统镜像测试：`node scripts/make-test-images.mjs`（Windows 需管理员，用 diskpart 生成 NTFS/FAT32/exFAT；macOS 用 hdiutil 生成 APFS/exFAT/FAT32），然后 `cargo test -p recovery-core --test images`。镜像不存在时对应测试自动跳过。
+真实文件系统镜像测试：`node scripts/make-test-images.mjs`（Windows 需管理员；脚本会临时关闭 TRIM 通知并在删除前 fsync，否则被删簇会被 VHD 驱动立即清零；macOS 用 hdiutil 生成 APFS/exFAT/FAT32），然后 `cargo test -p recovery-core --test images`。镜像不存在时对应测试自动跳过。`*-trimmed.img` 是故意在 TRIM 开启时生成的回归夹具。
 
 ### CLI
 

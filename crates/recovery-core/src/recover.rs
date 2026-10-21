@@ -468,6 +468,7 @@ mod tests {
             }],
             resident: None,
             name_damaged: false,
+            via_recycle_bin: false,
             note: String::new(),
         };
         let tmp = tempfile::tempdir().unwrap();

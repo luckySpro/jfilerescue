@@ -252,6 +252,7 @@ impl Carver {
                 extents,
                 resident: None,
                 name_damaged: false,
+                via_recycle_bin: false,
                 note,
             });
             last_end = abs + len;

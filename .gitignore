@@ -18,3 +18,7 @@ Thumbs.db
 *.jfr-part
 /tmp
 /test-images/*.img
+/test-images/*.vhd
+/test-images/*.log
+/test-images/done.txt
+/target/diag

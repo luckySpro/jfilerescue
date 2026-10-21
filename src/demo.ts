@@ -38,21 +38,22 @@ for (let i = 0; i < 140; i++) {
   files.push({
     id: id++, name: i >= names.length ? n.replace(/(\.[^.]+)$/, `-${i}$1`) : n, dir: dirs[i % dirs.length], size: 20_000 + ((i * 7919) % 30_000_000),
     source: "metadata", quality: ov === 0 ? "high" : ov < 30 ? "medium" : "low", overwritten_pct: ov, deleted_at: now - 86400 - i * 3600, modified_at: now - 86400 * 30 - i * 7200, created_at: now - 86400 * 60,
-    ext, extents: [{ offset: 1_000_000 * i, len: 20_000 }], name_damaged: i % 23 === 0, note: ov === 0 ? "数据簇未被重新分配" : `${ov}% 数据簇已被重新分配`,
+    ext, extents: [{ offset: 1_000_000 * i, len: 20_000 }], name_damaged: i % 23 === 0, via_recycle_bin: i % 7 === 3, note: ov === 0 ? "数据簇未被重新分配" : `${ov}% 数据簇已被重新分配`,
   });
 }
 for (let i = 0; i < 60; i++) {
   const ext = ["jpg", "pdf", "zip", "png", "docx"][i % 5];
-  files.push({ id: id++, name: `carved_${String(id).padStart(6, "0")}.${ext}`, dir: null, size: 100_000 + ((i * 104729) % 8_000_000), source: "carved", quality: i % 4 === 0 ? "medium" : "high", overwritten_pct: 0, deleted_at: null, modified_at: null, created_at: null, ext, extents: [{ offset: 5_000_000_000 + i * 9_000_000, len: 100_000 }], name_damaged: false, note: "结构校验通过" });
+  files.push({ id: id++, name: `carved_${String(id).padStart(6, "0")}.${ext}`, dir: null, size: 100_000 + ((i * 104729) % 8_000_000), source: "carved", quality: i % 4 === 0 ? "medium" : "high", overwritten_pct: 0, deleted_at: null, modified_at: null, created_at: null, ext, extents: [{ offset: 5_000_000_000 + i * 9_000_000, len: 100_000 }], name_damaged: false, via_recycle_bin: false, note: "结构校验通过" });
 }
 for (const f of files) if (f.name_damaged) f.name = `FILE_#${48000 + f.id}.${f.ext}`;
+for (const f of files) if (f.via_recycle_bin) f.note = "经回收站删除；" + f.note;
 
-const summary = () => ({ total: files.length, with_name: files.filter(f => f.source === "metadata").length, carved: files.filter(f => f.source === "carved").length, damaged_name: files.filter(f => f.name_damaged).length, bytes: files.reduce((a, f) => a + f.size, 0), high: files.filter(f => f.quality === "high").length, medium: files.filter(f => f.quality === "medium").length, low: files.filter(f => f.quality === "low").length });
+const summary = () => ({ total: files.length, with_name: files.filter(f => f.source === "metadata").length, carved: files.filter(f => f.source === "carved").length, damaged_name: files.filter(f => f.name_damaged).length, via_recycle_bin: files.filter(f => f.via_recycle_bin).length, bytes: files.reduce((a, f) => a + f.size, 0), high: files.filter(f => f.quality === "high").length, medium: files.filter(f => f.quality === "medium").length, low: files.filter(f => f.quality === "low").length });
 
 const sessions: SessionMeta[] = [
   { id: "demo-1", created_at: now - 7200, finished_at: now - 5400, state: "completed", device: { path: "\\\\.\\D:", identity: "WD", size: 2e12, sector_size: 4096, partition: null, display_name: "D: 数据盘 · NTFS", is_image: false }, request: { mode: "directory", depth: "deep", directory: "D:\\项目\\2025-合同", extensions: [], include_damaged_names: true, carve_unallocated_only: true, threads: 0 }, summary: summary(), fs: "NTFS", volume_label: "数据盘", volume_offset: 1048576, volume_len: 2e12, recovered: 6, read_errors: 0, warning: null, error: null },
-  { id: "demo-2", created_at: now - 86400 * 2, finished_at: now - 86400 * 2 + 3000, state: "completed", device: { path: "\\\\.\\F:", identity: "SD", size: 6.2e10, sector_size: 512, partition: null, display_name: "F: SanDisk 64G · exFAT", is_image: false }, request: { mode: "full", depth: "deep", extensions: [], include_damaged_names: true, carve_unallocated_only: true, threads: 0 }, summary: { total: 3902, with_name: 3100, carved: 802, damaged_name: 4, bytes: 2.1e10, high: 3400, medium: 400, low: 102 }, fs: "exFAT", volume_label: "TRANSFER", volume_offset: 0, volume_len: 6.2e10, recovered: 3811, read_errors: 0, warning: null, error: null },
-  { id: "demo-3", created_at: now - 86400 * 5, finished_at: now - 86400 * 5 + 120, state: "aborted", device: { path: "\\\\.\\C:", identity: "S5", size: 1e12, sector_size: 512, partition: null, display_name: "C: 系统盘 · NTFS", is_image: false }, request: { mode: "directory", depth: "quick", directory: "C:\\Users\\me\\Desktop", extensions: [], include_damaged_names: true, carve_unallocated_only: true, threads: 0 }, summary: { total: 12, with_name: 12, carved: 0, damaged_name: 0, bytes: 2e6, high: 2, medium: 4, low: 6 }, fs: "NTFS", volume_label: null, volume_offset: 0, volume_len: 1e12, recovered: 0, read_errors: 0, warning: null, error: "用户取消" },
+  { id: "demo-2", created_at: now - 86400 * 2, finished_at: now - 86400 * 2 + 3000, state: "completed", device: { path: "\\\\.\\F:", identity: "SD", size: 6.2e10, sector_size: 512, partition: null, display_name: "F: SanDisk 64G · exFAT", is_image: false }, request: { mode: "full", depth: "deep", extensions: [], include_damaged_names: true, carve_unallocated_only: true, threads: 0 }, summary: { total: 3902, with_name: 3100, carved: 802, damaged_name: 4, via_recycle_bin: 0, bytes: 2.1e10, high: 3400, medium: 400, low: 102 }, fs: "exFAT", volume_label: "TRANSFER", volume_offset: 0, volume_len: 6.2e10, recovered: 3811, read_errors: 0, warning: null, error: null },
+  { id: "demo-3", created_at: now - 86400 * 5, finished_at: now - 86400 * 5 + 120, state: "completed", device: { path: "\\\\.\\C:", identity: "S5", size: 1e12, sector_size: 512, partition: null, display_name: "C: 系统盘 · NTFS", is_image: false }, request: { mode: "directory", depth: "quick", directory: "C:\\Users\\me\\Desktop\\testjfile", extensions: [], include_damaged_names: true, carve_unallocated_only: true, threads: 0 }, summary: { total: 0, with_name: 0, carved: 0, damaged_name: 0, via_recycle_bin: 0, bytes: 0, high: 0, medium: 0, low: 0 }, fs: "NTFS", volume_label: null, volume_offset: 0, volume_len: 1e12, recovered: 0, read_errors: 0, warning: null, error: null, source_written_by_app: true },
 ];
 
 const sigs: Signature[] = [
@@ -68,6 +69,7 @@ const sigs: Signature[] = [
 
 let scanStart = 0;
 let scanning = false;
+let demoStoreRoot = "C:\\Users\\me\\AppData\\Roaming\\com.mjgroup.jfilerescue\\sessions";
 let recoverStart = 0;
 let recovering = false;
 let recoverIds: number[] = [];
@@ -103,15 +105,19 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       for (let i = 0; i < phases.length; i++) if (t < phases[i][0]) { phase = phases[i][1]; span = [i ? phases[i - 1][0] : 0, phases[i][0]]; break; }
       if (phase === "done") scanning = false;
       const frac = Math.min(1, (t - span[0]) / (span[1] - span[0]));
-      return { session_id: "demo-1", running: scanning, error: null, recent: files.slice(0, Math.min(files.length, Math.floor(t * 8))).slice(-6).reverse(),
+      return { session_id: "demo-1", running: scanning, error: null, memory_only: false, recent: files.slice(0, Math.min(files.length, Math.floor(t * 8))).slice(-6).reverse(),
         progress: { phase, done: Math.floor(frac * 487e9), total: 487e9, found: Math.min(files.length, Math.floor(t * 8)), bytes_read: Math.floor(t * 286e6), read_errors: 0, paused: false, message: phase === "metadata" ? "遍历 MFT" : phase === "carve" ? "签名雕刻（52 种签名）" : phase === "boot" ? "读取分区表" : "整理结果" } } as ScanStatus as T;
     }
     case "pause_scan": case "cancel_scan": if (cmd === "cancel_scan") scanning = false; return undefined as T;
     case "list_sessions": return sessions as T;
     case "load_session": return (sessions.find(s => s.id === a.id) ?? sessions[0]) as T;
+    case "source_risk": { const c = String(a.source).toUpperCase().includes("C:") || String(a.source).includes("PhysicalDrive0"); return { store_on_source: c, app_data_on_source: c, exe_on_source: false, store_root: "C:\\Users\\me\\AppData\\Roaming\\com.mjgroup.jfilerescue\\sessions" } as T; }
+    case "store_info": return { root: demoStoreRoot, default_root: "C:\\Users\\me\\AppData\\Roaming\\com.mjgroup.jfilerescue\\sessions", disk_identity: "physdisk:0", bytes: 184e6, memory_sessions: 0 } as T;
+    case "set_store_root": demoStoreRoot = a.root; return { root: demoStoreRoot, default_root: "C:\\Users\\me\\AppData\\Roaming\\com.mjgroup.jfilerescue\\sessions", disk_identity: "physdisk:1", bytes: 0, memory_sessions: 0 } as T;
+    case "save_memory_session": return sessions[0] as T;
     case "query_session": {
       const f = a.filter ?? {};
-      let r = files.filter(x => (!f.hide_empty || x.size > 0) && (!f.query || (x.dir + "/" + x.name).toLowerCase().includes(f.query.toLowerCase())) && (!f.source || x.source === f.source) && (!f.ext || x.ext === f.ext) && (!f.dir_prefix || (x.dir ?? "").toLowerCase() === f.dir_prefix.toLowerCase() || (x.dir ?? "").toLowerCase().startsWith(f.dir_prefix.toLowerCase() + "/")) && (!f.min_size || x.size >= f.min_size) && (!f.deleted_after || (x.deleted_at ?? 0) >= f.deleted_after));
+      let r = files.filter(x => (!f.hide_empty || x.size > 0) && (!f.recycle_only || x.via_recycle_bin) && (!f.query || (x.dir + "/" + x.name).toLowerCase().includes(f.query.toLowerCase())) && (!f.source || x.source === f.source) && (!f.ext || x.ext === f.ext) && (!f.dir_prefix || (x.dir ?? "").toLowerCase() === f.dir_prefix.toLowerCase() || (x.dir ?? "").toLowerCase().startsWith(f.dir_prefix.toLowerCase() + "/")) && (!f.min_size || x.size >= f.min_size) && (!f.deleted_after || (x.deleted_at ?? 0) >= f.deleted_after));
       if (f.min_quality) { const rank = { low: 0, medium: 1, high: 2 }; r = r.filter(x => rank[x.quality] >= rank[f.min_quality as "low"]); }
       const off = f.offset ?? 0; const lim = f.limit || 500;
       return { total: r.length, files: r.slice(off, off + lim) } as T;

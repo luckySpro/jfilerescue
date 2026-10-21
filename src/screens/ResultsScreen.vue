@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { api, pickSavePath, type FoundFile, type Preview, type Quality, type ResultFilter, type TreeNode } from "../api";
+import { api, pickDirectory, pickSavePath, type FoundFile, type Preview, type Quality, type ResultFilter, type TreeNode } from "../api";
 import { dict } from "../i18n";
 import { currentSession, fmtTime, go, humanBytes, notify, selectedFiles, selection } from "../store";
 
@@ -17,7 +17,7 @@ const preview = ref<Preview | null>(null);
 const previewLoading = ref(false);
 const expanded = ref(new Set<string>());
 
-const filter = ref<ResultFilter & { group: "all" | "dir" | "carved" | "damaged" }>({ query: "", min_quality: null, min_size: null, deleted_after: null, source: null, dir_prefix: null, ext: null, hide_empty: true, offset: 0, limit: 300, group: "all" });
+const filter = ref<ResultFilter & { group: "all" | "dir" | "carved" | "damaged" | "recycle" }>({ query: "", min_quality: null, min_size: null, deleted_after: null, source: null, dir_prefix: null, ext: null, hide_empty: true, offset: 0, limit: 300, group: "all" });
 const qualityPick = ref<"all" | "high" | "highmed">("all");
 const sizePick = ref<"all" | "1m" | "100m">("all");
 const timePick = ref<"all" | "24h" | "7d" | "30d">("all");
@@ -34,6 +34,7 @@ function buildFilter(): ResultFilter {
     min_size: sizePick.value === "1m" ? 1 << 20 : sizePick.value === "100m" ? 100 << 20 : null,
     deleted_after: timePick.value === "24h" ? now - 86400 : timePick.value === "7d" ? now - 7 * 86400 : timePick.value === "30d" ? now - 30 * 86400 : null,
     source: f.group === "carved" ? "carved" : f.group === "dir" ? "metadata" : null,
+    recycle_only: f.group === "recycle",
     dir_prefix: f.group === "dir" ? f.dir_prefix : null,
     ext: f.ext,
     hide_empty: f.hide_empty,
@@ -76,7 +77,7 @@ onMounted(async () => {
 watch([() => filter.value.query, qualityPick, sizePick, timePick, () => filter.value.hide_empty, () => filter.value.group, () => filter.value.dir_prefix, () => filter.value.ext], () => load());
 
 function pickDir(path: string | null) { filter.value.group = path == null ? "all" : "dir"; filter.value.dir_prefix = path; filter.value.ext = null; }
-function pickGroup(g: "carved" | "damaged") { filter.value.group = g; filter.value.dir_prefix = null; filter.value.ext = null; }
+function pickGroup(g: "carved" | "damaged" | "recycle") { filter.value.group = g; filter.value.dir_prefix = null; filter.value.ext = null; }
 function pickType(ext: string | null) { filter.value.group = "all"; filter.value.dir_prefix = null; filter.value.ext = ext; }
 function toggleExpand(p: string) { expanded.value.has(p) ? expanded.value.delete(p) : expanded.value.add(p); }
 
@@ -106,6 +107,19 @@ async function exportCsv() {
   try { const n = await api.exportCsv(session.value.id, p); notify(`${n} → ${p}`, "ok"); } catch (e) { notify(String(e), "error"); }
 }
 
+/** Memory-only session: results were never written (store sat on the source disk). */
+const memoryOnly = computed(() => !!session.value && session.value.source_written_by_app === true && session.value.store_disk_identity == null);
+async function saveElsewhere() {
+  if (!session.value) return;
+  const p = await pickDirectory(t.value.risk.storeLabel);
+  if (!p) return;
+  try {
+    await api.setStoreRoot(p);
+    session.value = await api.saveMemorySession(session.value.id);
+    notify(t.value.risk.storeChanged, "ok");
+  } catch (e) { notify(String(e), "error"); }
+}
+
 async function toRecover() {
   if (!session.value) return;
   if (selection.size === 0) return notify(t.value.recover.noSelection, "error");
@@ -120,9 +134,10 @@ const qLabel = (q: Quality) => t.value.results.qLabel[q];
 <template>
   <section v-if="session">
     <div class="row" style="justify-content: space-between; margin-bottom: 12px">
-      <div><h1 style="margin: 0">{{ t.results.title }} · {{ session.device.display_name }}</h1><span class="small muted">{{ t.results.completed }} {{ fmtTime(session.finished_at) }} · {{ session.summary.total }} {{ t.results.files }} · {{ humanBytes(session.summary.bytes) }} · {{ t.results.saved }}</span><div v-if="session.warning" class="chip warn mt-s"><span class="dot"></span>{{ session.warning }}</div></div>
-      <div class="row"><button class="btn" @click="exportCsv">{{ t.results.exportCsv }}</button><button class="btn" @click="go('home')">{{ t.results.rescan }}</button></div>
+      <div><h1 style="margin: 0">{{ t.results.title }} · {{ session.device.display_name }}</h1><span class="small muted">{{ t.results.completed }} {{ fmtTime(session.finished_at) }} · {{ session.summary.total }} {{ t.results.files }} · {{ humanBytes(session.summary.bytes) }} · {{ memoryOnly ? t.risk.memoryOnly : t.results.saved }}</span><div v-if="session.warning" class="chip warn mt-s"><span class="dot"></span>{{ session.warning }}</div></div>
+      <div class="row"><button v-if="memoryOnly" class="btn primary" @click="saveElsewhere">{{ t.risk.saveElsewhere }}</button><button class="btn" @click="exportCsv">{{ t.results.exportCsv }}</button><button class="btn" @click="go('home')">{{ t.results.rescan }}</button></div>
     </div>
+    <div v-if="session.source_written_by_app" class="notice warn" style="margin-bottom: 12px"><span>⚠</span><span><b>{{ t.risk.title }}</b> {{ t.risk.sourceWritten }}</span></div>
     <div class="results">
       <div class="card">
         <div class="hd">{{ t.results.browse }} <select v-model="browseBy" style="margin-left: auto; padding: 2px 6px; font-size: 12px"><option value="dir">{{ t.results.byDir }}</option><option value="type">{{ t.results.byType }}</option><option value="time">{{ t.results.byTime }}</option></select></div>
@@ -132,6 +147,7 @@ const qLabel = (q: Quality) => t.value.results.qLabel[q];
             <TreeBranch v-for="c in tree.children" :key="c.path" :node="c" :depth="0" :expanded="expanded" :current="filter.group === 'dir' ? (filter.dir_prefix ?? null) : null" @pick="pickDir" @toggle="toggleExpand" />
             <button style="margin-top: 8px" :class="{ on: filter.group === 'carved' }" @click="pickGroup('carved')">🧩 {{ t.results.carvedGroup }} <span class="cnt">{{ session.summary.carved }}</span></button>
             <button :class="{ on: filter.group === 'damaged' }" @click="pickGroup('damaged')">⚠ {{ t.results.damagedGroup }} <span class="cnt">{{ session.summary.damaged_name }}</span></button>
+            <button v-if="session.summary.via_recycle_bin" :class="{ on: filter.group === 'recycle' }" @click="pickGroup('recycle')">🗑 {{ t.results.recycleGroup }} <span class="cnt">{{ session.summary.via_recycle_bin }}</span></button>
           </template>
           <template v-else-if="browseBy === 'type'">
             <button v-for="(n, ext) in types" :key="ext" :class="{ on: filter.ext === ext }" @click="pickType(String(ext))">📄 .{{ ext }} <span class="cnt">{{ n }}</span></button>
@@ -159,7 +175,7 @@ const qLabel = (q: Quality) => t.value.results.qLabel[q];
             <tbody>
               <tr v-for="f in files" :key="f.id" class="clickable" :class="{ sel: active?.id === f.id }" @click="show(f)">
                 <td @click.stop><input type="checkbox" :checked="selection.has(f.id)" @change="toggle(f)" /></td>
-                <td class="name" :class="{ mono: f.source === 'carved' || f.name_damaged }" :title="f.name">{{ f.name }}<span v-if="f.name_damaged" class="chip warn" style="margin-left: 6px">{{ t.results.damagedTag }}</span></td>
+                <td class="name" :class="{ mono: f.source === 'carved' || f.name_damaged }" :title="f.name">{{ f.name }}<span v-if="f.name_damaged" class="chip warn" style="margin-left: 6px">{{ t.results.damagedTag }}</span><span v-else-if="f.via_recycle_bin" class="chip" style="margin-left: 6px">🗑 {{ t.results.recycleTag }}</span></td>
                 <td class="path muted small" :title="f.dir ?? ''">{{ f.dir ?? t.results.noPath }}</td>
                 <td class="nowrap">{{ humanBytes(f.size) }}</td>
                 <td class="small nowrap col-time">{{ f.deleted_at ? fmtTime(f.deleted_at) : t.results.unknown }}</td>

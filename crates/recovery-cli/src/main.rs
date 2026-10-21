@@ -487,8 +487,14 @@ fn run(cli: &Cli) -> recovery_core::Result<()> {
                 restore_times: true,
             };
             let progress = Progress::new();
-            let rep =
-                recovery_core::recover::recover(dev.as_ref(), &src, &selected, &opts, &progress)?;
+            // Extents are volume-relative: slice the device to the scanned volume.
+            let vol = recovery_core::device::SliceDevice::new(
+                dev,
+                s.meta.volume_offset,
+                s.meta.volume_len,
+                "vol",
+            )?;
+            let rep = recovery_core::recover::recover(&vol, &src, &selected, &opts, &progress)?;
             let mut meta = s.meta.clone();
             meta.recovered += rep.ok + rep.warned;
             store.write_meta(&meta)?;

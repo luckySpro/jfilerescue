@@ -39,7 +39,7 @@ function stateClass(s: string) { return s === "completed" ? "ok" : s === "runnin
             <td>{{ m.request.mode === 'directory' ? t.sessions.modeDir : t.sessions.modeFull }} · {{ m.request.depth === 'deep' ? t.sessions.deep : t.sessions.quick }}</td>
             <td>{{ m.summary.total }}</td>
             <td>{{ m.recovered }}</td>
-            <td><span class="chip" :class="stateClass(m.state)"><span class="dot"></span>{{ t.sessions.st[m.state] }}</span><div v-if="m.error" class="small muted">{{ m.error }}</div></td>
+            <td><span class="chip" :class="stateClass(m.state)"><span class="dot"></span>{{ t.sessions.st[m.state] }}</span><div v-if="m.error" class="small muted">{{ m.error }}</div><div v-if="m.source_written_by_app" class="chip warn mt-s" :title="t.risk.sourceWritten"><span class="dot"></span>{{ t.risk.storeOnSourceShort }}</div></td>
             <td style="white-space: nowrap"><button class="btn sm" @click="open(m)" :disabled="m.state === 'running' || m.state === 'failed'">{{ t.sessions.open }}</button> <button class="btn sm" @click="del(m)" :disabled="m.state === 'running'">{{ t.sessions.del }}</button></td>
           </tr>
         </tbody>

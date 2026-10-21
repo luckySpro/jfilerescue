@@ -81,6 +81,11 @@ pub struct FoundFile {
     /// Name could not be decoded; a synthetic one was assigned.
     #[serde(default)]
     pub name_damaged: bool,
+    /// File went through the Recycle Bin; `dir`/`name` are the *original*
+    /// location restored from the `$I` record, `deleted_at` is the real
+    /// deletion time.
+    #[serde(default)]
+    pub via_recycle_bin: bool,
     /// Free-form reason for the quality score.
     #[serde(default)]
     pub note: String,
@@ -170,6 +175,9 @@ pub struct ResultFilter {
     pub dir_prefix: Option<String>,
     #[serde(default)]
     pub ext: Option<String>,
+    /// Only files that went through the Recycle Bin.
+    #[serde(default)]
+    pub recycle_only: bool,
     #[serde(default = "default_true")]
     pub hide_empty: bool,
     #[serde(default)]
@@ -203,6 +211,9 @@ impl ResultFilter {
             if f.source != s {
                 return false;
             }
+        }
+        if self.recycle_only && !f.via_recycle_bin {
+            return false;
         }
         if let Some(e) = &self.ext {
             if !f.ext.eq_ignore_ascii_case(e) {
@@ -245,6 +256,8 @@ pub struct Summary {
     pub with_name: u64,
     pub carved: u64,
     pub damaged_name: u64,
+    #[serde(default)]
+    pub via_recycle_bin: u64,
     pub bytes: u64,
     pub high: u64,
     pub medium: u64,
@@ -261,6 +274,9 @@ impl Summary {
         }
         if f.name_damaged {
             self.damaged_name += 1;
+        }
+        if f.via_recycle_bin {
+            self.via_recycle_bin += 1;
         }
         match f.quality {
             Quality::High => self.high += 1,

@@ -1,7 +1,7 @@
 {
   "name": "jfilerescue",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "JFileRescue — 跨平台只读文件找回工具",
   "author": "M&J Group <473276@qq.com>",

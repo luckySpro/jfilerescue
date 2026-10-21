@@ -680,6 +680,7 @@ impl Volume for ApfsVolume {
                 extents,
                 resident: None,
                 name_damaged: damaged,
+                via_recycle_bin: false,
                 note,
             });
             id_counter += 1;

@@ -240,6 +240,12 @@ impl NtfsVolume {
                     // Unnamed $DATA = main stream. Ignore alternate streams.
                     let d = rec.data.get_or_insert_with(DataAttr::default);
                     if non_resident {
+                        // Non-resident header is 64 bytes (72 with compression unit);
+                        // bail on truncated attributes instead of indexing past them.
+                        if a.len() < 64 {
+                            off += len;
+                            continue;
+                        }
                         let start_vcn = le_u64(a, 16);
                         let real = le_u64(a, 48);
                         let runs_off = le_u16(a, 32) as usize;
@@ -251,7 +257,8 @@ impl NtfsVolume {
                             } else {
                                 d.runs.extend(runs.clone());
                             }
-                            d.next_vcn = le_u64(a, 24) + 1;
+                            // last_vcn is -1 (all ones) for an empty attribute.
+                            d.next_vcn = le_u64(a, 24).wrapping_add(1);
                         }
                     } else if let Some(v) = resident_value(a) {
                         d.resident = Some(v.to_vec());
@@ -260,6 +267,10 @@ impl NtfsVolume {
                 }
                 ATTR_ATTR_LIST => {
                     if non_resident {
+                        if a.len() < 64 {
+                            off += len;
+                            continue;
+                        }
                         let runs_off = le_u16(a, 32) as usize;
                         if runs_off < a.len() {
                             rec.attr_list_runs =
@@ -524,12 +535,57 @@ impl Volume for NtfsVolume {
         progress.set_message("重建目录结构");
         let target = req.directory.as_deref().map(normalize_path);
         let mut cache: HashMap<u64, Option<String>> = HashMap::new();
+
+        // Pass 2a: Recycle Bin. A file deleted through the Recycle Bin is renamed to
+        // `$Recycle.Bin\<SID>\$Rxxxxxx.ext` with a sibling `$Ixxxxxx.ext` holding the
+        // original path and deletion time. Both are deleted together when the bin is
+        // emptied; `$I` is tiny and resident, so it usually survives. Map pair-key →
+        // original location so `$R` entries can be reported under their real path.
+        let mut recycle: HashMap<(u64, String), RecycleInfo> = HashMap::new();
+        for (n, rec) in deleted.iter() {
+            let Some(f) = best_name(&rec.names) else {
+                continue;
+            };
+            if !f.name.starts_with("$I") {
+                continue;
+            }
+            let Some(key) = recycle_pair_key(&f.name) else {
+                continue;
+            };
+            let Some(d) = rec.data.as_ref() else { continue };
+            let bytes = match &d.resident {
+                Some(r) => r.clone(),
+                None => {
+                    // Rare: non-resident $I; read the first run only.
+                    let mut v = vec![];
+                    for r in d.runs.iter().take(1) {
+                        if r.offset != u64::MAX {
+                            if let Ok(b) = self
+                                .dev
+                                .read_vec(r.offset, r.len.min(d.real_size).min(70_000) as usize)
+                            {
+                                v = b;
+                            }
+                        }
+                    }
+                    v
+                }
+            };
+            if let Some(info) = parse_recycle_info(&bytes) {
+                recycle.insert((f.parent, key), info);
+            }
+            let _ = n;
+        }
+        if !recycle.is_empty() {
+            log::info!("NTFS: {} Recycle Bin $I records resolved", recycle.len());
+        }
+
         let mut files = Vec::new();
         let mut id = 1u64;
         for (n, mut rec) in deleted {
             progress.checkpoint()?;
             let fname = best_name(&rec.names);
-            let (name, dir, damaged) = match fname {
+            let (mut name, mut dir, damaged) = match fname {
                 Some(f) => {
                     let dir = self.path_of(f.parent, &mut cache, &names);
                     let dmg = name_looks_damaged(&f.name);
@@ -546,13 +602,38 @@ impl Volume for NtfsVolume {
             if damaged && !req.include_damaged_names {
                 continue;
             }
+            // Recycle Bin: swap in the original location; skip the `$I` records themselves.
+            let mut via_recycle_bin = false;
+            let mut recycle_deleted_at: Option<i64> = None;
+            let mut recycle_size: Option<u64> = None;
+            if let Some(f) = fname {
+                if let Some(key) = recycle_pair_key(&f.name) {
+                    if f.name.starts_with("$I") {
+                        continue;
+                    }
+                    if let Some(info) = recycle.get(&(f.parent, key)) {
+                        let full = normalize_path(&info.original_path);
+                        let (d, nm) = match full.rfind('/') {
+                            Some(i) => (full[..i].to_string(), full[i + 1..].to_string()),
+                            None => (String::new(), full.clone()),
+                        };
+                        if !nm.is_empty() {
+                            name = nm;
+                            dir = Some(d);
+                            via_recycle_bin = true;
+                            recycle_deleted_at = filetime_to_unix(info.deleted_filetime);
+                            recycle_size = Some(info.size);
+                        }
+                    } else if dir.as_deref().map(is_recycle_dir).unwrap_or(false) {
+                        // `$R` without a surviving `$I`: keep it, but flag the location as unknown.
+                        via_recycle_bin = true;
+                    }
+                }
+            }
             if req.mode == ScanMode::Directory {
                 let Some(t) = &target else { continue };
                 let d = dir.clone().unwrap_or_default();
                 if !crate::model::path_has_prefix(&d, t) {
-                    // A deleted parent whose own path could not be rebuilt
-                    // becomes an orphan; keep it under a synthetic folder when
-                    // its name matches the target's last component.
                     continue;
                 }
             }
@@ -593,7 +674,20 @@ impl Volume for NtfsVolume {
                 bitmap.overwritten_pct(&extents)
             };
             let in_range = extents.iter().all(|e| e.offset + e.len <= self.dev.size());
-            let (quality, note) = score(overwritten, in_range, damaged, size, resident.is_some());
+            let (quality, mut note) =
+                score(overwritten, in_range, damaged, size, resident.is_some());
+            if via_recycle_bin {
+                note = if recycle_deleted_at.is_some() {
+                    format!("经回收站删除；{}", note)
+                } else {
+                    format!("回收站残留（原路径未知）；{}", note)
+                };
+            }
+            if let Some(s) = recycle_size {
+                if s != size && resident.is_none() {
+                    note.push_str(&format!("；回收站记录大小 {} 与数据大小不一致", s));
+                }
+            }
             let std = rec.std.unwrap_or_default();
             files.push(FoundFile {
                 id,
@@ -603,14 +697,16 @@ impl Volume for NtfsVolume {
                 source: Source::Metadata,
                 quality,
                 overwritten_pct: overwritten,
-                // NTFS has no deletion timestamp; MFT-modified is the closest proxy.
-                deleted_at: filetime_to_unix(std.mft_modified),
+                // NTFS has no deletion timestamp; the $I record has the real one,
+                // otherwise MFT-modified is the closest proxy.
+                deleted_at: recycle_deleted_at.or_else(|| filetime_to_unix(std.mft_modified)),
                 modified_at: filetime_to_unix(std.modified),
                 created_at: filetime_to_unix(std.created),
                 ext,
                 extents,
                 resident,
                 name_damaged: damaged,
+                via_recycle_bin,
                 note,
             });
             id += 1;
@@ -631,6 +727,74 @@ fn best_name(names: &[FileName]) -> Option<&FileName> {
         .find(|n| n.namespace == 1 || n.namespace == 3)
         .or_else(|| names.iter().find(|n| n.namespace == 0))
         .or_else(|| names.first())
+}
+
+/// Parsed Recycle Bin `$I` metadata record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecycleInfo {
+    pub original_path: String,
+    pub size: u64,
+    pub deleted_filetime: u64,
+}
+
+/// Parse a Recycle Bin `$I` record (Vista+). v1: fixed 520-byte UTF-16 path;
+/// v2 (Win10+): u32 char count followed by the UTF-16 path.
+pub fn parse_recycle_info(b: &[u8]) -> Option<RecycleInfo> {
+    if b.len() < 28 {
+        return None;
+    }
+    let version = le_u64(b, 0);
+    let size = le_u64(b, 8);
+    let deleted = le_u64(b, 16);
+    let path = match version {
+        1 => {
+            if b.len() < 24 + 520 {
+                return None;
+            }
+            utf16le(&b[24..24 + 520])
+        }
+        2 => {
+            let n = le_u32(b, 24) as usize;
+            if n == 0 || n > 32768 || b.len() < 28 + n * 2 {
+                return None;
+            }
+            utf16le(&b[28..28 + n * 2])
+        }
+        _ => return None,
+    };
+    let path = path.trim_end_matches('\0').to_string();
+    // Must look like an absolute Windows path (drive or UNC); reject binary noise.
+    let ok = path.len() >= 3
+        && ((path.as_bytes()[0].is_ascii_alphabetic() && &path[1..3] == ":\\")
+            || path.starts_with("\\\\"))
+        && !path.chars().any(|c| (c as u32) < 0x20);
+    if !ok {
+        return None;
+    }
+    Some(RecycleInfo {
+        original_path: path,
+        size,
+        deleted_filetime: deleted,
+    })
+}
+
+/// `$R<6 chars>[.ext]` ↔ `$I<same 6 chars>[.ext]` pairing key.
+fn recycle_pair_key(name: &str) -> Option<String> {
+    let b = name.as_bytes();
+    if b.len() < 8 || b[0] != b'$' || !(b[1] == b'R' || b[1] == b'I') {
+        return None;
+    }
+    let tail = &name[2..];
+    if !tail.chars().take(6).all(|c| c.is_ascii_alphanumeric()) || tail.chars().count() < 6 {
+        return None;
+    }
+    Some(tail.to_string())
+}
+
+/// Is this directory path a per-user Recycle Bin folder (`$Recycle.Bin/S-1-5-…`)?
+fn is_recycle_dir(dir: &str) -> bool {
+    let lower = dir.to_ascii_lowercase();
+    lower.starts_with("$recycle.bin/") || lower == "$recycle.bin" || lower.starts_with("recycler/")
 }
 
 fn score(
@@ -673,6 +837,58 @@ fn score(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn utf16(s: &str) -> Vec<u8> {
+        s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn recycle_info_v2() {
+        let path = "C:\\Users\\Administrator\\Desktop\\testjfile\\合同.docx";
+        let mut b = vec![];
+        b.extend_from_slice(&2u64.to_le_bytes());
+        b.extend_from_slice(&12345u64.to_le_bytes());
+        b.extend_from_slice(&133_801_632_000_000_000u64.to_le_bytes());
+        let p = utf16(&format!("{}\0", path));
+        b.extend_from_slice(&((p.len() / 2) as u32).to_le_bytes());
+        b.extend_from_slice(&p);
+        let i = parse_recycle_info(&b).unwrap();
+        assert_eq!(i.original_path, path);
+        assert_eq!(i.size, 12345);
+        assert_eq!(filetime_to_unix(i.deleted_filetime), Some(1_735_689_600));
+    }
+
+    #[test]
+    fn recycle_info_v1_and_garbage() {
+        let path = "D:\\x\\y.txt";
+        let mut b = vec![];
+        b.extend_from_slice(&1u64.to_le_bytes());
+        b.extend_from_slice(&7u64.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes());
+        let mut p = utf16(path);
+        p.resize(520, 0);
+        b.extend_from_slice(&p);
+        assert_eq!(parse_recycle_info(&b).unwrap().original_path, path);
+        assert!(parse_recycle_info(&[0u8; 40]).is_none());
+        assert!(parse_recycle_info(b"PK\x03\x04garbagegarbagegarbagegarbage").is_none());
+    }
+
+    #[test]
+    fn recycle_pairing() {
+        assert_eq!(
+            recycle_pair_key("$RABC123.docx").as_deref(),
+            Some("ABC123.docx")
+        );
+        assert_eq!(
+            recycle_pair_key("$IABC123.docx").as_deref(),
+            Some("ABC123.docx")
+        );
+        assert_eq!(recycle_pair_key("$RABC123"), Some("ABC123".into()));
+        assert!(recycle_pair_key("$R12.txt").is_none());
+        assert!(recycle_pair_key("report.docx").is_none());
+        assert!(is_recycle_dir("$Recycle.Bin/S-1-5-21-1"));
+        assert!(!is_recycle_dir("Users/x"));
+    }
 
     #[test]
     fn runs_decode_positive_and_negative() {

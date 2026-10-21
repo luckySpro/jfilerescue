@@ -24,6 +24,7 @@ export interface FoundFile {
   ext: string;
   extents: { offset: number; len: number }[];
   name_damaged: boolean;
+  via_recycle_bin: boolean;
   note: string;
 }
 
@@ -45,13 +46,14 @@ export interface ResultFilter {
   source?: Source | null;
   dir_prefix?: string | null;
   ext?: string | null;
+  recycle_only?: boolean;
   hide_empty?: boolean;
   offset?: number;
   limit?: number;
 }
 
 export interface Summary {
-  total: number; with_name: number; carved: number; damaged_name: number; bytes: number; high: number; medium: number; low: number;
+  total: number; with_name: number; carved: number; damaged_name: number; via_recycle_bin: number; bytes: number; high: number; medium: number; low: number;
 }
 
 export interface VolumeEntry {
@@ -70,13 +72,15 @@ export interface WriterProcess { name: string; pid: number; reason: string }
 export interface ProgressSnapshot {
   phase: Phase; done: number; total: number; found: number; bytes_read: number; read_errors: number; paused: boolean; message: string;
 }
-export interface ScanStatus { session_id: string | null; running: boolean; progress: ProgressSnapshot; error: string | null; recent: FoundFile[] }
-
 export interface DeviceRef { path: string; identity: string; size: number; sector_size: number; partition: number | null; display_name: string; is_image: boolean }
 export interface SessionMeta {
   id: string; created_at: number; finished_at: number | null; state: "running" | "completed" | "aborted" | "failed"; device: DeviceRef; request: ScanRequest;
   summary: Summary; fs: string; volume_label: string | null; volume_offset: number; volume_len: number; recovered: number; read_errors: number; warning: string | null; error: string | null;
+  store_disk_identity?: string | null; source_written_by_app?: boolean;
 }
+export interface ScanStatus { session_id: string | null; running: boolean; progress: ProgressSnapshot; error: string | null; recent: FoundFile[]; memory_only: boolean }
+export interface SourceRisk { store_on_source: boolean; app_data_on_source: boolean; exe_on_source: boolean; store_root: string }
+export interface StoreInfo { root: string; default_root: string; disk_identity: string | null; bytes: number; memory_sessions: number }
 export interface TreeNode { name: string; path: string; count: number; children: TreeNode[] }
 export interface Page { total: number; files: FoundFile[] }
 export interface Preview { kind: "image" | "text" | "hex"; mime: string | null; data_base64: string | null; text: string | null; hex: string }
@@ -117,6 +121,10 @@ export const api = {
 
   listSessions: () => call<SessionMeta[]>("list_sessions"),
   loadSession: (id: string) => call<SessionMeta>("load_session", { id }),
+  sourceRisk: (source: string) => call<SourceRisk>("source_risk", { source }),
+  storeInfo: () => call<StoreInfo>("store_info"),
+  setStoreRoot: (root: string) => call<StoreInfo>("set_store_root", { root }),
+  saveMemorySession: (id: string) => call<SessionMeta>("save_memory_session", { id }),
   querySession: (id: string, filter: ResultFilter) => call<Page>("query_session", { id, filter }),
   sessionTree: (id: string) => call<TreeNode>("session_tree", { id }),
   sessionTypes: (id: string) => call<Record<string, number>>("session_types", { id }),

@@ -1,4 +1,4 @@
-use crate::state::{ActiveRecover, ActiveScan, AppState};
+use crate::state::{ActiveRecover, ActiveScan, AppState, MemorySession};
 use recovery_core::carve::signatures::Signature;
 use recovery_core::device::BlockDevice;
 use recovery_core::model::{FoundFile, ResultFilter, ScanRequest};
@@ -56,6 +56,35 @@ pub struct StartScanArgs {
     pub display_name: Option<String>,
 }
 
+/// Facts about where the app lives relative to a candidate source — shown
+/// before scanning so the user can move the results store (or stop) first.
+#[derive(Serialize)]
+pub struct SourceRisk {
+    /// Results store would be written on the source disk → scan runs memory-only.
+    pub store_on_source: bool,
+    /// The app's own data/cache directory (WebView2 profile etc.) is on the source disk.
+    pub app_data_on_source: bool,
+    /// The running executable is on the source disk.
+    pub exe_on_source: bool,
+    pub store_root: String,
+}
+
+#[tauri::command]
+pub fn source_risk(st: State<AppState>, source: String) -> SourceRisk {
+    let p = st.platform.as_ref();
+    let exe = std::env::current_exe().ok();
+    SourceRisk {
+        store_on_source: st.store_on_source(&source),
+        app_data_on_source: recovery_platform::same_disk(p, &source, &st.data_dir),
+        exe_on_source: exe
+            .as_deref()
+            .and_then(|e| e.parent())
+            .map(|d| recovery_platform::same_disk(p, &source, d))
+            .unwrap_or(false),
+        store_root: st.store_root().display().to_string(),
+    }
+}
+
 #[tauri::command]
 pub fn start_scan(st: State<AppState>, args: StartScanArgs) -> R<String> {
     if st
@@ -101,10 +130,27 @@ pub fn start_scan(st: State<AppState>, args: StartScanArgs) -> R<String> {
         display_name: args.display_name.unwrap_or_else(|| dev.describe()),
         is_image: Path::new(&args.source).is_file(),
     };
-    let mut meta = st
-        .store
-        .create(dev_ref, args.request.clone())
-        .map_err(err)?;
+    // Never write results onto the disk being scanned: that is exactly what
+    // reuses the deleted files' MFT records. Fall back to a memory-only session.
+    let memory_only = st.store_on_source(&args.source);
+    let app_data_on_source =
+        recovery_platform::same_disk(st.platform.as_ref(), &args.source, &st.data_dir);
+    let store_root = st.store_root();
+    let store_identity = st.store_disk_identity();
+    let mut meta = if memory_only {
+        let mut m = recovery_core::session::SessionStore::new(&store_root)
+            .create_unsaved(dev_ref, args.request.clone());
+        m.source_written_by_app = true;
+        m
+    } else {
+        st.store
+            .lock()
+            .unwrap()
+            .create(dev_ref, args.request.clone())
+            .map_err(err)?
+    };
+    meta.store_disk_identity = store_identity;
+    meta.source_written_by_app |= app_data_on_source;
     let progress = AppState::new_progress();
     let done = Arc::new(Mutex::new(None));
     let session_id = meta.id.clone();
@@ -114,10 +160,18 @@ pub fn start_scan(st: State<AppState>, args: StartScanArgs) -> R<String> {
         progress: Arc::clone(&progress),
         source_path: args.source.clone(),
         done: Arc::clone(&done),
+        memory_only,
+        pending: Arc::new(Mutex::new(None)),
     });
+    let pending = st
+        .scan
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| Arc::clone(&s.pending))
+        .unwrap();
 
     let sigs = st.sigs.lock().unwrap().clone();
-    let store_root = st.store.root().to_path_buf();
     let req = args.request;
     let partition = args.partition;
     std::thread::Builder::new()
@@ -132,24 +186,38 @@ pub fn start_scan(st: State<AppState>, args: StartScanArgs) -> R<String> {
                     } else {
                         SessionState::Completed
                     };
-                    store
-                        .complete(&mut meta, &outcome, state)
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
+                    if memory_only {
+                        store.complete_in_memory(&mut meta, &outcome, state);
+                        *pending.lock().unwrap() = Some(MemorySession {
+                            meta: meta.clone(),
+                            files: Arc::new(outcome.files),
+                        });
+                        Ok(())
+                    } else {
+                        store
+                            .complete(&mut meta, &outcome, state)
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    }
                 }
                 Err(recovery_core::Error::Cancelled) => {
                     progress.set_phase(Phase::Cancelled, 1);
-                    // Keep whatever was collected? The scan returns nothing on cancel; mark aborted.
                     meta.state = SessionState::Aborted;
                     meta.error = Some("用户取消".into());
-                    store
-                        .write_meta(&meta)
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
+                    if memory_only {
+                        Ok(())
+                    } else {
+                        store
+                            .write_meta(&meta)
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    }
                 }
                 Err(e) => {
                     progress.set_phase(Phase::Failed, 1);
-                    let _ = store.fail(&mut meta, &e.to_string());
+                    if !memory_only {
+                        let _ = store.fail(&mut meta, &e.to_string());
+                    }
                     Err(e.to_string())
                 }
             };
@@ -166,6 +234,8 @@ pub struct ScanStatus {
     pub progress: ProgressSnapshot,
     pub error: Option<String>,
     pub recent: Vec<FoundFile>,
+    /// Results are held in memory because the store sits on the source disk.
+    pub memory_only: bool,
 }
 
 #[tauri::command]
@@ -178,6 +248,7 @@ pub fn scan_progress(st: State<AppState>) -> ScanStatus {
             progress: ProgressSnapshot::default(),
             error: None,
             recent: vec![],
+            memory_only: false,
         },
         Some(s) => {
             let done = s.done.lock().unwrap().clone();
@@ -187,6 +258,10 @@ pub fn scan_progress(st: State<AppState>) -> ScanStatus {
                     .lock()
                     .unwrap()
                     .retain(|p| p != &s.source_path);
+                // Hand a finished memory-only session to the in-memory registry.
+                if let Some(ms) = s.pending.lock().unwrap().take() {
+                    st.memory.lock().unwrap().insert(ms.meta.id.clone(), ms);
+                }
             }
             ScanStatus {
                 session_id: Some(s.session_id.clone()),
@@ -194,6 +269,7 @@ pub fn scan_progress(st: State<AppState>) -> ScanStatus {
                 progress: s.progress.snapshot(),
                 error: done.and_then(|d| d.err()),
                 recent: vec![],
+                memory_only: s.memory_only,
             }
         }
     }
@@ -219,12 +295,110 @@ pub fn cancel_scan(st: State<AppState>) -> R<()> {
 
 #[tauri::command]
 pub fn list_sessions(st: State<AppState>) -> R<Vec<SessionMeta>> {
-    st.store.list().map_err(err)
+    let mut list = st.store.lock().unwrap().list().map_err(err)?;
+    for m in st.memory.lock().unwrap().values() {
+        list.push(m.meta.clone());
+    }
+    list.sort_by_key(|m| std::cmp::Reverse(m.created_at));
+    Ok(list)
 }
 
 #[tauri::command]
 pub fn load_session(st: State<AppState>, id: String) -> R<SessionMeta> {
     st.meta(&id)
+}
+
+/// Where sessions are stored, and whether it can be changed right now.
+#[derive(Serialize)]
+pub struct StoreInfo {
+    pub root: String,
+    pub default_root: String,
+    pub disk_identity: Option<String>,
+    pub bytes: u64,
+    pub memory_sessions: usize,
+}
+
+#[tauri::command]
+pub fn store_info(st: State<AppState>) -> StoreInfo {
+    StoreInfo {
+        root: st.store_root().display().to_string(),
+        default_root: st.data_dir.join("sessions").display().to_string(),
+        disk_identity: st.store_disk_identity(),
+        bytes: st.store.lock().unwrap().total_bytes(),
+        memory_sessions: st.memory.lock().unwrap().len(),
+    }
+}
+
+/// Move the results store to another folder (typically another disk). Existing
+/// sessions are left where they are; memory-only sessions are flushed there if
+/// that folder is not on their source disk.
+#[tauri::command]
+pub fn set_store_root(st: State<AppState>, root: String) -> R<StoreInfo> {
+    if st
+        .scan
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| s.done.lock().unwrap().is_none())
+        .unwrap_or(false)
+    {
+        return Err("扫描进行中，无法更改结果存储位置".into());
+    }
+    let root = PathBuf::from(root.trim());
+    if root.as_os_str().is_empty() {
+        return Err("路径为空".into());
+    }
+    st.set_store_root(root)?;
+    flush_memory_sessions(&st);
+    Ok(store_info(st))
+}
+
+/// Persist memory-only sessions whose source disk differs from the current store disk.
+fn flush_memory_sessions(st: &AppState) {
+    let mut mem = st.memory.lock().unwrap();
+    let ids: Vec<String> = mem.keys().cloned().collect();
+    for id in ids {
+        let Some(ms) = mem.get(&id) else { continue };
+        if st.store_on_source(&ms.meta.device.path) {
+            continue;
+        }
+        let store = st.store.lock().unwrap();
+        let mut meta = ms.meta.clone();
+        meta.store_disk_identity = st.store_disk_identity();
+        if store.persist(&meta, &ms.files).is_ok() {
+            st.cache
+                .lock()
+                .unwrap()
+                .insert(id.clone(), Arc::clone(&ms.files));
+            mem.remove(&id);
+        }
+    }
+}
+
+/// Save one memory-only session to the current store (used by the Results
+/// page's "save results" button after the user picked a store on another disk).
+#[tauri::command]
+pub fn save_memory_session(st: State<AppState>, id: String) -> R<SessionMeta> {
+    let ms = st
+        .memory
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|m| (m.meta.clone(), Arc::clone(&m.files)))
+        .ok_or("该会话不在内存中")?;
+    if st.store_on_source(&ms.0.device.path) {
+        return Err("结果存储位置仍在源磁盘上；请先在设置中改到另一块磁盘".into());
+    }
+    let mut meta = ms.0;
+    meta.store_disk_identity = st.store_disk_identity();
+    st.store
+        .lock()
+        .unwrap()
+        .persist(&meta, &ms.1)
+        .map_err(err)?;
+    st.cache.lock().unwrap().insert(id.clone(), ms.1);
+    st.memory.lock().unwrap().remove(&id);
+    Ok(meta)
 }
 
 #[derive(Serialize)]
@@ -263,11 +437,24 @@ pub fn session_types(
 #[tauri::command]
 pub fn delete_session(st: State<AppState>, id: String) -> R<()> {
     st.cache.lock().unwrap().remove(&id);
-    st.store.delete(&id).map_err(err)
+    if st.memory.lock().unwrap().remove(&id).is_some() {
+        return Ok(());
+    }
+    st.store.lock().unwrap().delete(&id).map_err(err)
 }
 
 #[tauri::command]
 pub fn export_csv(st: State<AppState>, id: String, path: String) -> R<usize> {
+    let meta = st.meta(&id)?;
+    // The export is a write: refuse it on the source disk of this session.
+    let target = PathBuf::from(&path);
+    let parent = target
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or(target.clone());
+    if recovery_platform::same_disk(st.platform.as_ref(), &meta.device.path, &parent) {
+        return Err(recovery_core::Error::SameDisk.to_string());
+    }
     let files = st.files_of(&id)?;
     std::fs::write(&path, recovery_core::session::export_csv(&files)).map_err(err)?;
     Ok(files.len())
@@ -275,7 +462,7 @@ pub fn export_csv(st: State<AppState>, id: String, path: String) -> R<usize> {
 
 #[tauri::command]
 pub fn sessions_bytes(st: State<AppState>) -> u64 {
-    st.store.total_bytes()
+    st.store.lock().unwrap().total_bytes()
 }
 
 // ---------- preview ----------
@@ -504,7 +691,8 @@ pub fn start_recover(st: State<AppState>, args: StartRecoverArgs) -> R<()> {
         result: Arc::clone(&result),
         partial: Arc::clone(&partial),
     });
-    let store_root = st.store.root().to_path_buf();
+    let store_root = st.store_root();
+    let is_memory = st.memory.lock().unwrap().contains_key(&args.id);
     let opts = args.options;
     let mut meta2 = meta;
     std::thread::Builder::new()
@@ -514,8 +702,10 @@ pub fn start_recover(st: State<AppState>, args: StartRecoverArgs) -> R<()> {
                 recovery_core::recover::recover(vol.as_ref(), &src, &selected, &opts, &progress);
             if let Ok(rep) = &r {
                 meta2.recovered += rep.ok + rep.warned;
-                let store = recovery_core::session::SessionStore::new(store_root);
-                let _ = store.write_meta(&meta2);
+                if !is_memory {
+                    let store = recovery_core::session::SessionStore::new(store_root);
+                    let _ = store.write_meta(&meta2);
+                }
                 *partial.lock().unwrap() = rep.items.clone();
             }
             *result.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
@@ -673,7 +863,9 @@ pub fn diagnostics(st: State<AppState>, app: tauri::AppHandle) -> serde_json::Va
         "signatures_enabled": st.sigs.lock().unwrap().enabled().len(),
         "privilege": p,
         "data_dir": st.data_dir.display().to_string(),
-        "sessions_bytes": st.store.total_bytes(),
+        "store_root": st.store_root().display().to_string(),
+        "sessions_bytes": st.store.lock().unwrap().total_bytes(),
+        "memory_sessions": st.memory.lock().unwrap().len(),
         "webview": tauri::webview_version().unwrap_or_default(),
     })
 }

@@ -52,6 +52,14 @@ pub struct SessionMeta {
     pub warning: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// Where the app stored this session's results (so a later run can tell
+    /// whether the store sat on the source volume).
+    #[serde(default)]
+    pub store_disk_identity: Option<String>,
+    /// Set when the results store (or the app itself) lives on the scanned
+    /// volume: deleted metadata may already have been reused by the app's own writes.
+    #[serde(default)]
+    pub source_written_by_app: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +109,14 @@ impl SessionStore {
     }
 
     pub fn create(&self, device: DeviceRef, request: ScanRequest) -> Result<SessionMeta> {
-        let meta = SessionMeta {
+        let meta = self.create_unsaved(device, request);
+        self.write_meta(&meta)?;
+        Ok(meta)
+    }
+
+    /// Build a session record without touching disk (memory-only sessions).
+    pub fn create_unsaved(&self, device: DeviceRef, request: ScanRequest) -> SessionMeta {
+        SessionMeta {
             id: Self::new_id(),
             created_at: now(),
             finished_at: None,
@@ -117,9 +132,9 @@ impl SessionStore {
             read_errors: 0,
             warning: None,
             error: None,
-        };
-        self.write_meta(&meta)?;
-        Ok(meta)
+            store_disk_identity: None,
+            source_written_by_app: false,
+        }
     }
 
     pub fn write_meta(&self, meta: &SessionMeta) -> Result<()> {
@@ -127,12 +142,13 @@ impl SessionStore {
         atomic_write(&self.dir(&meta.id).join("meta.json"), &data)
     }
 
-    pub fn complete(
+    /// Fill `meta` from a finished scan without writing anything.
+    pub fn complete_in_memory(
         &self,
         meta: &mut SessionMeta,
         outcome: &ScanOutcome,
         state: SessionState,
-    ) -> Result<()> {
+    ) {
         meta.state = state;
         meta.finished_at = Some(now());
         meta.summary = outcome.summary.clone();
@@ -142,10 +158,23 @@ impl SessionStore {
         meta.volume_len = outcome.volume_len;
         meta.read_errors = outcome.read_errors;
         meta.warning = outcome.warning.clone();
-        let files =
-            serde_json::to_vec(&outcome.files).map_err(|e| Error::Session(e.to_string()))?;
-        atomic_write(&self.dir(&meta.id).join("files.json"), &files)?;
+    }
+
+    /// Write an already-complete session (meta + files) to this store.
+    pub fn persist(&self, meta: &SessionMeta, files: &[FoundFile]) -> Result<()> {
+        let data = serde_json::to_vec(files).map_err(|e| Error::Session(e.to_string()))?;
+        atomic_write(&self.dir(&meta.id).join("files.json"), &data)?;
         self.write_meta(meta)
+    }
+
+    pub fn complete(
+        &self,
+        meta: &mut SessionMeta,
+        outcome: &ScanOutcome,
+        state: SessionState,
+    ) -> Result<()> {
+        self.complete_in_memory(meta, outcome, state);
+        self.persist(meta, &outcome.files)
     }
 
     pub fn fail(&self, meta: &mut SessionMeta, err: &str) -> Result<()> {
@@ -297,12 +326,12 @@ pub fn query<'a>(files: &'a [FoundFile], filter: &ResultFilter) -> (Vec<&'a Foun
 /// CSV export of the result list.
 pub fn export_csv(files: &[FoundFile]) -> String {
     let mut s = String::from(
-        "\u{FEFF}id,name,path,size,source,quality,overwritten_pct,deleted_at,modified_at,note\n",
+        "\u{FEFF}id,name,path,size,source,quality,overwritten_pct,deleted_at,modified_at,via_recycle_bin,note\n",
     );
     for f in files {
         let esc = |v: &str| format!("\"{}\"", v.replace('"', "\"\""));
         s.push_str(&format!(
-            "{},{},{},{},{:?},{:?},{},{},{},{}\n",
+            "{},{},{},{},{:?},{:?},{},{},{},{},{}\n",
             f.id,
             esc(&f.name),
             esc(f.dir.as_deref().unwrap_or("")),
@@ -312,6 +341,7 @@ pub fn export_csv(files: &[FoundFile]) -> String {
             f.overwritten_pct,
             f.deleted_at.map(|t| t.to_string()).unwrap_or_default(),
             f.modified_at.map(|t| t.to_string()).unwrap_or_default(),
+            f.via_recycle_bin,
             esc(&f.note)
         ));
     }
@@ -339,6 +369,7 @@ mod tests {
             extents: vec![],
             resident: None,
             name_damaged: false,
+            via_recycle_bin: false,
             note: String::new(),
         }
     }
